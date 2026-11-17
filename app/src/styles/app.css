@@ -1,0 +1,168 @@
+@import "tailwindcss";
+@import "./tokens.css";
+@import "@fontsource-variable/inter";
+
+/* Maps the generated variables (tokens.css) to Tailwind theme keys.
+   `inline` makes utilities reference var(--t-color-*) directly, so theme switching
+   works through the [data-theme] selectors in tokens.css. */
+@theme inline {
+  /* Remove Tailwind's default palette and scales so only tokens exist. */
+  --color-*: initial;
+  --text-*: initial;
+  --radius-*: initial;
+  --shadow-*: initial;
+  --font-*: initial;
+  --ease-*: initial;
+
+  --color-bg: var(--t-color-bg);
+  --color-surface: var(--t-color-surface);
+  --color-surface-raised: var(--t-color-surface-raised);
+  --color-surface-sunken: var(--t-color-surface-sunken);
+  --color-border: var(--t-color-border);
+  --color-border-input: var(--t-color-border-input);
+  --color-text: var(--t-color-text);
+  --color-text-muted: var(--t-color-text-muted);
+  --color-text-disabled: var(--t-color-text-disabled);
+  --color-accent: var(--t-color-accent);
+  --color-accent-hover: var(--t-color-accent-hover);
+  --color-accent-subtle: var(--t-color-accent-subtle);
+  --color-on-accent: var(--t-color-on-accent);
+  --color-focus: var(--t-color-focus);
+  --color-danger: var(--t-color-danger);
+  --color-danger-subtle: var(--t-color-danger-subtle);
+  --color-on-danger: var(--t-color-on-danger);
+  --color-success: var(--t-color-success);
+  --color-warning: var(--t-color-warning);
+  --color-warning-subtle: var(--t-color-warning-subtle);
+  --color-viewport-bg: var(--t-color-viewport-bg);
+  --color-viewport-grid: var(--t-color-viewport-grid);
+  --color-axis-x: var(--t-color-axis-x);
+  --color-axis-y: var(--t-color-axis-y);
+  --color-axis-z: var(--t-color-axis-z);
+  --color-body: var(--t-color-body);
+  --color-edge: var(--t-color-edge);
+  --color-preselect: var(--t-color-preselect);
+  --color-selection: var(--t-color-selection);
+  --color-sketch-under: var(--t-color-sketch-under);
+  --color-sketch-full: var(--t-color-sketch-full);
+  --color-sketch-conflict: var(--t-color-sketch-conflict);
+  --color-sketch-construction: var(--t-color-sketch-construction);
+  --color-dimension: var(--t-color-dimension);
+  --color-tooltip-bg: var(--t-color-tooltip-bg);
+  --color-on-tooltip: var(--t-color-on-tooltip);
+
+  --font-sans: var(--t-font-sans);
+  --font-mono: var(--t-font-mono);
+
+  --text-xs: var(--t-text-xs);
+  --text-xs--line-height: var(--t-text-xs--line-height);
+  --text-xs--font-weight: var(--t-text-xs--font-weight);
+  --text-sm: var(--t-text-sm);
+  --text-sm--line-height: var(--t-text-sm--line-height);
+  --text-sm--font-weight: var(--t-text-sm--font-weight);
+  --text-base: var(--t-text-base);
+  --text-base--line-height: var(--t-text-base--line-height);
+  --text-base--font-weight: var(--t-text-base--font-weight);
+  --text-lg: var(--t-text-lg);
+  --text-lg--line-height: var(--t-text-lg--line-height);
+  --text-lg--font-weight: var(--t-text-lg--font-weight);
+  --text-xl: var(--t-text-xl);
+  --text-xl--line-height: var(--t-text-xl--line-height);
+  --text-xl--font-weight: var(--t-text-xl--font-weight);
+  --text-display: var(--t-text-display);
+  --text-display--line-height: var(--t-text-display--line-height);
+  --text-display--font-weight: var(--t-text-display--font-weight);
+
+  --radius-sm: var(--t-radius-sm);
+  --radius-md: var(--t-radius-md);
+  --radius-lg: var(--t-radius-lg);
+  --radius-pill: var(--t-radius-pill);
+
+  --shadow-panel: var(--t-shadow-panel);
+  --shadow-pop: var(--t-shadow-pop);
+
+  --ease-token: var(--motion-ease);
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    @apply bg-bg text-text font-sans text-base antialiased;
+    font-feature-settings: normal;
+    margin: 0;
+  }
+  /* Focus ring: 2px focus colour, 2px offset, keyboard focus only. */
+  :focus-visible {
+    outline: 2px solid var(--t-color-focus);
+    outline-offset: 2px;
+  }
+  /* Numbers are tabular everywhere a readout lives. */
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
+}
+
+/* Touch: matches a coarse pointer, or the design page's "touch" preview (.force-touch). */
+@custom-variant touch {
+  @media (pointer: coarse) {
+    @slot;
+  }
+  &:where(.force-touch, .force-touch *) {
+    @slot;
+  }
+}
+
+/* Raises the hit area to hit-touch (44px) on touch. Sizes at 32px+ come from h-8 etc. */
+@utility touch-hit {
+  @variant touch {
+    min-height: var(--layout-hit-touch);
+    min-width: var(--layout-hit-touch);
+  }
+}
+@utility touch-hit-h {
+  @variant touch {
+    min-height: var(--layout-hit-touch);
+  }
+}
+
+/* Modal backdrop (not a colour role: plain black scrim, heavier in dark). */
+:root,
+[data-theme="light"] {
+  --backdrop: rgb(0 0 0 / 0.4);
+}
+[data-theme="dark"] {
+  --backdrop: rgb(0 0 0 / 0.6);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --backdrop: rgb(0 0 0 / 0.6);
+  }
+}
+
+@keyframes indeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
+}
+@keyframes shimmer {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
