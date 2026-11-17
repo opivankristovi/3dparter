@@ -6,4 +6,7 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   plugins: [react(), tailwindcss()],
   server: { port: 5173, strictPort: true },
+  worker: { format: 'es' },
+  // The OpenCascade build ships its own .wasm; pre-bundling it breaks the wasm URL lookup.
+  optimizeDeps: { exclude: ['replicad-opencascadejs'] },
 })
