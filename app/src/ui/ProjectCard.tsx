@@ -25,7 +25,12 @@ export interface ProjectCardProps {
 }
 
 function NameOrInput({ name, renaming, onCommit }: { name: string; renaming?: boolean; onCommit?: (n: string) => void }) {
-  if (!renaming) return <span className="truncate text-base font-medium">{name}</span>
+  if (!renaming)
+    return (
+      <span title={name} className="truncate text-base font-medium">
+        {name}
+      </span>
+    )
   return (
     <input
       autoFocus
@@ -76,6 +81,7 @@ export function ProjectCard({
   const link = (
     <a
       href={href}
+      title={name}
       aria-label={renaming ? undefined : `${name}, ${edited}`}
       className="absolute inset-0 z-10 rounded-[inherit]"
       tabIndex={renaming ? -1 : 0}

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 import { ArrowLeft, Download, Moon, Redo2, Ruler, Settings, Undo2 } from 'lucide-react'
 import { IconButton } from './IconButton'
 import { ProgressIndicator } from './ProgressIndicator'
@@ -14,6 +15,22 @@ export interface TopBarProps {
   busy?: boolean
   canUndo?: boolean
   canRedo?: boolean
+  onBack?: () => void
+  onUndo?: () => void
+  onRedo?: () => void
+  onExport?: () => void
+  onSettings?: () => void
+  onThemeToggle?: () => void
+  /** Icon for the theme button (defaults to a moon). */
+  themeIcon?: ReactNode
+  /** Replaces the default save chip (e.g. for error and conflict states). */
+  saveSlot?: ReactNode
+  /** Extra buttons at the right end (e.g. a sidebar toggle on small screens). */
+  actions?: ReactNode
+  /** Hide the Measure button until the tool exists. */
+  hideMeasure?: boolean
+  /** Phones: one flex row, and Settings and Theme are left to `actions` (an overflow menu). */
+  compact?: boolean
   /** Floating panel look (inset, rounded, shadow) vs. full-width. */
   floating?: boolean
   className?: string
@@ -79,30 +96,49 @@ export function TopBar({
   canRedo = false,
   floating = true,
   className,
+  onBack,
+  onUndo,
+  onRedo,
+  onExport,
+  onSettings,
+  onThemeToggle,
+  themeIcon,
+  saveSlot,
+  actions,
+  hideMeasure,
+  compact,
 }: TopBarProps) {
   return (
     <header
       aria-busy={busy || undefined}
       className={cn(
-        'relative grid h-(--layout-topbar-h) grid-cols-[1fr_auto_1fr] items-center gap-2 bg-surface-raised px-2',
+        'relative h-(--layout-topbar-h) items-center gap-2 bg-surface-raised px-2',
+        compact ? 'flex' : 'grid grid-cols-[1fr_auto_1fr]',
         floating ? 'rounded-lg shadow-panel' : 'border-b border-border',
         className,
       )}
     >
-      <div className="flex min-w-0 items-center gap-1">
-        <IconButton label="Back to projects" icon={<ArrowLeft size={20} strokeWidth={1.75} />} />
+      <div className={cn('flex min-w-0 items-center gap-1', compact && 'flex-1')}>
+        <IconButton label="Back to projects" onClick={onBack} icon={<ArrowLeft size={20} strokeWidth={1.75} />} />
         <ProjectName name={projectName} onRename={onRename} />
-        <StatusChip variant={saveState} className="ml-1 border-transparent bg-transparent text-text-muted shadow-none" />
+        {saveSlot ?? (
+          <StatusChip variant={saveState} className="ml-1 border-transparent bg-transparent text-text-muted shadow-none" />
+        )}
       </div>
       <div className="flex items-center gap-1">
-        <IconButton label="Undo" shortcut="Ctrl Z" icon={<Undo2 size={20} strokeWidth={1.75} />} disabled={!canUndo} />
-        <IconButton label="Redo" shortcut="Ctrl Y" icon={<Redo2 size={20} strokeWidth={1.75} />} disabled={!canRedo} />
+        <IconButton label="Undo" shortcut="Ctrl Z" icon={<Undo2 size={20} strokeWidth={1.75} />} disabled={!canUndo} onClick={onUndo} />
+        <IconButton label="Redo" shortcut="Ctrl Y" icon={<Redo2 size={20} strokeWidth={1.75} />} disabled={!canRedo} onClick={onRedo} />
       </div>
       <div className="flex items-center justify-end gap-1">
-        <IconButton label="Measure" shortcut="M" icon={<Ruler size={20} strokeWidth={1.75} />} />
-        <IconButton label="Export" icon={<Download size={20} strokeWidth={1.75} />} />
-        <IconButton label="Settings" icon={<Settings size={20} strokeWidth={1.75} />} />
-        <IconButton label="Theme" icon={<Moon size={20} strokeWidth={1.75} />} />
+        {hideMeasure ? null : <IconButton label="Measure" shortcut="M" icon={<Ruler size={20} strokeWidth={1.75} />} />}
+        <IconButton label="Export" icon={<Download size={20} strokeWidth={1.75} />} onClick={onExport} />
+        {compact ? null : (
+          <>
+            <IconButton label="Settings" icon={<Settings size={20} strokeWidth={1.75} />} onClick={onSettings} />
+            <IconButton label="Theme" icon={themeIcon ?? <Moon size={20} strokeWidth={1.75} />} onClick={onThemeToggle} />
+          </>
+        )}
+        {actions}
       </div>
       {busy ? (
         <div className="absolute inset-x-2 bottom-0 overflow-hidden rounded-pill">

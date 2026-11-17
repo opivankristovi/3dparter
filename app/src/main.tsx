@@ -1,12 +1,19 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './styles/app.css'
-import { DesignPage } from './design/DesignPage'
+import { App } from './app/App'
+import { requestPersistence } from './data/projects'
+import { seedIfFirstRun } from './data/seed'
 
-// TODO: the real app shell comes later. Until then the design page renders for
-// every route; `#design` is the canonical address and stays valid after the shell lands.
-const showDesign = location.hash === '#design' || true
+// Ask the browser not to evict our projects, then add the sample on first run.
+// A storage failure must not stop the app from drawing.
+requestPersistence()
+const ready = seedIfFirstRun().catch(() => {})
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>{showDesign ? <DesignPage /> : null}</StrictMode>,
-)
+void ready.then(() => {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <App />
+    </StrictMode>,
+  )
+})
