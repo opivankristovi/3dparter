@@ -15,9 +15,11 @@ import { SidebarPanel } from '../ui/SidebarPanel'
 import { TopBar } from '../ui/TopBar'
 import { cn } from '../ui/cn'
 import { ExportDialog } from './dialogs/ExportDialog'
+import type { ExportOptions } from './dialogs/ExportDialog'
 import { SettingsDialog } from './dialogs/SettingsDialog'
 import { NotFound } from './NotFound'
 import { SaveChip } from './workspace/SaveChip'
+import { WorkspaceView } from './workspace/WorkspaceView'
 import { HistoryTab, ItemsTab, VariablesTab } from './workspace/SidebarTabs'
 import type { FeatureStatuses } from './workspace/SidebarTabs'
 import { ALL_TOOLS, TOOL_KEYS, WorkspaceToolRail } from './workspace/WorkspaceToolRail'
@@ -32,18 +34,24 @@ export interface WorkspaceProps {
   statuses?: FeatureStatuses
   /** Extra content for the bottom-centre slot (e.g. a sketch status chip). */
   status?: ReactNode
+  /** The kernel is regenerating: thin progress line along the top bar. */
+  busy?: boolean
+  /** Extra top-bar buttons (e.g. zoom to fit), shown from the desktop breakpoint up. */
+  topBarActions?: ReactNode
+  /** Writes the file for the Export dialog. Without it, Export reports that it is not connected. */
+  onExport?: (opts: ExportOptions) => Promise<void>
 }
 
 // Space below the floating top bar: bar height plus two gaps.
 const BELOW_TOPBAR = 'top-[calc(var(--layout-topbar-h)+1rem)]'
 
-/** The route entry: loads nothing itself, injects nothing yet. */
+/** The route entry. WorkspaceView owns the kernel, the viewport and the tools, and renders <Workspace>. */
 export function WorkspaceRoute() {
   const { id } = useParams<{ id: string }>()
-  return <Workspace key={id} />
+  return <WorkspaceView key={id} />
 }
 
-export function Workspace({ viewport, overlay, statuses, status }: WorkspaceProps) {
+export function Workspace({ viewport, overlay, statuses, status, busy, topBarActions, onExport }: WorkspaceProps) {
   const { id } = useParams<{ id: string }>()
   const [, navigate] = useLocation()
   const [load, setLoad] = useState<'loading' | 'ok' | 'not-found'>('loading')
@@ -72,7 +80,19 @@ export function Workspace({ viewport, overlay, statuses, status }: WorkspaceProp
       </div>
     )
   }
-  return <Shell viewport={viewport} overlay={overlay} statuses={statuses} status={status} goHome={() => navigate('/')} navigate={navigate} />
+  return (
+    <Shell
+      viewport={viewport}
+      overlay={overlay}
+      statuses={statuses}
+      status={status}
+      busy={busy}
+      topBarActions={topBarActions}
+      onExport={onExport}
+      goHome={() => navigate('/')}
+      navigate={navigate}
+    />
+  )
 }
 
 function Shell({
@@ -80,6 +100,9 @@ function Shell({
   overlay,
   statuses,
   status,
+  busy,
+  topBarActions,
+  onExport,
   goHome,
   navigate,
 }: WorkspaceProps & { goHome: () => void; navigate: (to: string) => void }) {
@@ -88,7 +111,7 @@ function Shell({
   const canUndo = useProjectStore((s) => s.canUndo)
   const canRedo = useProjectStore((s) => s.canRedo)
   const activeTool = useProjectStore((s) => s.activeTool)
-  const bodyCount = useProjectStore((s) => Object.keys(s.doc.bodies).length)
+  const bodyCount = useProjectStore((s) => Object.values(s.doc.bodies).filter((b) => b.visible).length)
   const rename = useProjectStore((s) => s.rename)
   const undo = useProjectStore((s) => s.undo)
   const redo = useProjectStore((s) => s.redo)
@@ -178,11 +201,17 @@ function Shell({
           onThemeToggle={toggleTheme}
           themeIcon={dark ? <Sun size={20} strokeWidth={1.75} /> : <Moon size={20} strokeWidth={1.75} />}
           saveSlot={<SaveChip state={saveState} />}
+          busy={busy}
           hideMeasure
           compact={!tablet}
           actions={
-            desktop ? undefined : tablet ? (
-              panelToggle
+            desktop ? (
+              topBarActions
+            ) : tablet ? (
+              <>
+                {topBarActions}
+                {panelToggle}
+              </>
             ) : (
               <DropdownMenu
                 align="end"
@@ -263,9 +292,12 @@ function Shell({
         open={exportOpen}
         onOpenChange={setExportOpen}
         bodyCount={bodyCount}
-        onExport={async () => {
-          throw new Error("Export isn't connected yet.")
-        }}
+        onExport={
+          onExport ??
+          (async () => {
+            throw new Error("Export isn't connected yet.")
+          })
+        }
       />
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} commands={commands} />
