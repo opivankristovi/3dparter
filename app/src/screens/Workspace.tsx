@@ -5,6 +5,8 @@ import { Ellipsis, Moon, PanelRight, Sun } from 'lucide-react'
 import { useIsDark, useSettings } from '../app/useSettings'
 import { createProject } from '../data/projects'
 import { useProjectStore } from '../doc/store'
+import { addDimension, applyConstraint, setAutoConstraints, toggleConstructionOfSelection } from '../sketch/actions'
+import { useSketchUi } from '../sketch/sketchUi'
 import { Button } from '../ui/Button'
 import { CommandPalette, useCommandPaletteHotkey } from '../ui/CommandPalette'
 import type { Command } from '../ui/CommandPalette'
@@ -22,6 +24,7 @@ import { SaveChip } from './workspace/SaveChip'
 import { WorkspaceView } from './workspace/WorkspaceView'
 import { HistoryTab, ItemsTab, VariablesTab } from './workspace/SidebarTabs'
 import type { FeatureStatuses } from './workspace/SidebarTabs'
+import { useToolStore } from './workspace/toolStore'
 import { ALL_TOOLS, TOOL_KEYS, WorkspaceToolRail } from './workspace/WorkspaceToolRail'
 import { useBreakpoints, useSaveOnLeave, useWorkspaceHotkeys } from './workspace/hooks'
 
@@ -119,6 +122,8 @@ function Shell({
   const toggleTheme = useSettings((s) => s.toggleTheme)
   const dark = useIsDark()
   const { desktop, tablet } = useBreakpoints()
+  const sketching = useToolStore((s) => s.activeSketchId !== null)
+  const autoOn = useSketchUi((s) => s.autoConstraints)
 
   const [tab, setTab] = useState('history')
   const [sidebarOpen, setSidebarOpen] = useState(true)
@@ -149,10 +154,24 @@ function Shell({
         shortcut: t.shortcut,
         onRun: () => useProjectStore.getState().setActiveTool(t.id),
       })),
+      ...(sketching
+        ? [
+            { id: 'sketch.horizontal', label: 'Horizontal', group: 'Sketch', shortcut: 'H', onRun: () => applyConstraint('horizontal') },
+            { id: 'sketch.vertical', label: 'Vertical', group: 'Sketch', shortcut: 'V', onRun: () => applyConstraint('vertical') },
+            { id: 'sketch.dimension', label: 'Dimension', group: 'Sketch', shortcut: 'D', onRun: addDimension },
+            { id: 'sketch.construction', label: 'Construction', group: 'Sketch', shortcut: 'X', onRun: toggleConstructionOfSelection },
+            {
+              id: 'sketch.auto',
+              label: autoOn ? 'Turn off automatic constraints' : 'Turn on automatic constraints',
+              group: 'Sketch',
+              onRun: () => setAutoConstraints(!autoOn),
+            },
+          ]
+        : []),
       { id: 'export', label: 'Export STL', group: 'File', onRun: () => setExportOpen(true) },
       { id: 'theme', label: 'Toggle theme', group: 'View', onRun: () => useSettings.getState().toggleTheme() },
     ],
-    [goHome, navigate],
+    [goHome, navigate, sketching, autoOn],
   )
 
   const sidebar = (

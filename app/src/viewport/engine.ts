@@ -6,6 +6,7 @@ import { createPickGeometry } from './pickGeometry'
 import { ORIGIN_PLANES, ORIGIN_PLANE_LABELS } from '../doc/types'
 import type { OriginPlaneName, PlaneFrame, ProjectDocument, Ref, SketchEntity, Vec2, Vec3 } from '../doc/types'
 import type { MeshData, SketchRegionData } from '../kernel/api'
+import type { EntityState } from '../sketch/solver/defined'
 import { circlePolyline, localToWorld, rayPlane, worldToLocal } from '../sketch/geometry'
 import { buildGroups, faceNameAtTriangle, sortFaces } from './pick'
 import type { FaceRange } from './pick'
@@ -22,6 +23,8 @@ const TOKEN_NAMES = [
   'preselect',
   'selection',
   'sketch-under',
+  'sketch-full',
+  'sketch-conflict',
   'sketch-construction',
   'accent-subtle',
   'accent',
@@ -54,6 +57,8 @@ export interface SketchGroup {
   frame: PlaneFrame
   entities: SketchEntity[]
   active: boolean
+  /** Defined state per entity id (active sketch only). Missing = under-defined. */
+  states?: Record<string, EntityState>
 }
 
 interface BodyObj {
@@ -144,6 +149,17 @@ export class ViewportEngine {
   private edgeMat = new THREE.LineBasicMaterial()
   private sketchMat = new THREE.LineBasicMaterial({ depthTest: false, transparent: true })
   private sketchInactiveMat = new THREE.LineBasicMaterial({ depthTest: false, transparent: true, opacity: 0.55 })
+  private sketchFullMat = new THREE.LineBasicMaterial({ depthTest: false, transparent: true })
+  private sketchConflictMat = new THREE.LineBasicMaterial({ depthTest: false, transparent: true })
+  private sketchConstructionMat = new THREE.LineDashedMaterial({ depthTest: false, transparent: true, dashSize: 2.5, gapSize: 2 })
+  private sketchInactiveConstructionMat = new THREE.LineDashedMaterial({
+    depthTest: false,
+    transparent: true,
+    opacity: 0.55,
+    dashSize: 2.5,
+    gapSize: 2,
+  })
+  private cameraListeners = new Set<() => void>()
   private regionLineMat = new THREE.LineBasicMaterial({ depthTest: false, transparent: true, opacity: 0.8 })
   private hoverLineMat = new THREE.LineBasicMaterial({ depthTest: false })
   private selectLineMat = new THREE.LineBasicMaterial({ depthTest: false })
@@ -348,6 +364,13 @@ export class ViewportEngine {
     this.sun.position.copy(this.camera.position)
     this.sun.target.position.copy(this.controls.target)
     this.renderer.render(this.scene, this.camera)
+    for (const fn of this.cameraListeners) fn()
+  }
+
+  /** Calls `fn` after every drawn frame (camera moves, resizes), so overlays can follow the view. */
+  onFrame(fn: () => void): () => void {
+    this.cameraListeners.add(fn)
+    return () => this.cameraListeners.delete(fn)
   }
 
   private resize() {
@@ -402,6 +425,10 @@ export class ViewportEngine {
     this.edgeMat.color.copy(p.edge)
     this.sketchMat.color.copy(p['sketch-under'])
     this.sketchInactiveMat.color.copy(p['sketch-under'])
+    this.sketchFullMat.color.copy(p['sketch-full'])
+    this.sketchConflictMat.color.copy(p['sketch-conflict'])
+    this.sketchConstructionMat.color.copy(p['sketch-construction'])
+    this.sketchInactiveConstructionMat.color.copy(p['sketch-construction'])
     this.regionLineMat.color.copy(p['sketch-under'])
     this.hoverLineMat.color.copy(p.preselect)
     this.selectLineMat.color.copy(p.selection)
@@ -682,6 +709,15 @@ export class ViewportEngine {
     return h / (2 * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) * depth)
   }
 
+  /** Changes whenever the camera or the canvas size does, so overlays know when to reposition. */
+  viewKey(): string {
+    const p = this.camera.position
+    const q = this.camera.quaternion
+    return [p.x, p.y, p.z, q.x, q.y, q.z, q.w, this.camera.fov, this.canvas.clientWidth, this.canvas.clientHeight]
+      .map((n) => n.toFixed(4))
+      .join(',')
+  }
+
   /** Client (page) coordinates of a world point. */
   worldToClient(world: Vec3): [number, number] {
     const rect = this.canvas.getBoundingClientRect()
@@ -692,19 +728,37 @@ export class ViewportEngine {
   setSketches(groups: SketchGroup[]) {
     this.disposeChildren(this.sketchGroup)
     for (const g of groups) {
-      const seg: number[] = []
-      for (const e of g.entities) if (!e.construction) seg.push(...entitySegments(e, g.frame))
-      if (seg.length === 0) continue
-      const lines = new THREE.LineSegments(lineGeometry(seg), g.active ? this.sketchMat : this.sketchInactiveMat)
-      lines.renderOrder = 5
-      lines.frustumCulled = false
-      this.sketchGroup.add(lines)
+      const solid = new Map<THREE.Material, number[]>()
+      const dashed: number[] = []
+      const into = (mat: THREE.Material, seg: number[]) => {
+        const list = solid.get(mat)
+        if (list) list.push(...seg)
+        else solid.set(mat, [...seg])
+      }
+      for (const e of g.entities) {
+        const seg = entitySegments(e, g.frame)
+        if (e.construction) dashed.push(...seg)
+        else if (!g.active) into(this.sketchInactiveMat, seg)
+        else {
+          const st = g.states?.[e.id]
+          into(st === 'full' ? this.sketchFullMat : st === 'conflict' ? this.sketchConflictMat : this.sketchMat, seg)
+        }
+      }
+      const add = (geo: THREE.BufferGeometry, mat: THREE.Material, dash: boolean) => {
+        const lines = new THREE.LineSegments(geo, mat)
+        if (dash) lines.computeLineDistances()
+        lines.renderOrder = 5
+        lines.frustumCulled = false
+        this.sketchGroup.add(lines)
+      }
+      for (const [mat, seg] of solid) add(lineGeometry(seg), mat, false)
+      if (dashed.length) add(lineGeometry(dashed), g.active ? this.sketchConstructionMat : this.sketchInactiveConstructionMat, true)
     }
     this.requestRender()
   }
 
   /** Hover and selection marks for sketch entities. */
-  setSketchMarks(frame: PlaneFrame | null, hover: SketchEntity | null, selected: SketchEntity[]) {
+  setSketchMarks(frame: PlaneFrame | null, hover: SketchEntity[], selected: SketchEntity[]) {
     this.disposeChildren(this.marksGroup)
     if (frame) {
       const add = (ents: SketchEntity[], mat: THREE.LineBasicMaterial, order: number) => {
@@ -717,7 +771,7 @@ export class ViewportEngine {
         this.marksGroup.add(l)
       }
       add(selected, this.selectLineMat, 7)
-      if (hover) add([hover], this.hoverLineMat, 8)
+      add(hover, this.hoverLineMat, 8)
     }
     this.requestRender()
   }
@@ -925,6 +979,10 @@ export class ViewportEngine {
       this.edgeMat,
       this.sketchMat,
       this.sketchInactiveMat,
+      this.sketchFullMat,
+      this.sketchConflictMat,
+      this.sketchConstructionMat,
+      this.sketchInactiveConstructionMat,
       this.regionLineMat,
       this.hoverLineMat,
       this.selectLineMat,

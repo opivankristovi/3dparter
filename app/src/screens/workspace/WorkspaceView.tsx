@@ -10,6 +10,9 @@ import { ORIGIN_PLANE_LABELS } from '../../doc/types'
 import { cancelExtrude, useExtrudeTool } from '../../extrude/ExtrudeTool'
 import { getKernel } from '../../kernel/client'
 import { SketchLayer } from '../../sketch/SketchLayer'
+import { SketchStatus } from '../../sketch/SketchStatus'
+import { useSketchUi } from '../../sketch/sketchUi'
+import { useSolverInit } from '../../sketch/useSketchSolve'
 import { endSketch, finishSketch, startSketchOn } from '../../sketch/session'
 import { Button } from '../../ui/Button'
 import { IconButton } from '../../ui/IconButton'
@@ -76,12 +79,14 @@ export function WorkspaceView() {
   const kernel = useKernel(doc, draft, draftReplaces)
   const extrude = useExtrudeTool(kernel.regions, kernel.statuses, kernel.busy)
   useHistoryEdit()
+  useSolverInit()
+  const solverReady = useSketchUi((s) => s.solver === 'ready')
 
   const [engine, setEngine] = useState<ViewportEngine | null>(null)
 
   // Dev-only test hook (no-op in production builds).
   const engineReady = useRef(false)
-  engineReady.current = kernel.engine === 'ready'
+  engineReady.current = kernel.engine === 'ready' && solverReady
   useEffect(() => (engine ? installTestHook(engine, () => engineReady.current) : undefined), [engine])
 
   const sketching = activeSketchId !== null
@@ -242,7 +247,12 @@ export function WorkspaceView() {
       </Chip>
     )
   } else if (sketching) {
-    hint = <Chip>Sketching on {planeLabel} · R rectangle · C circle · L line · Esc to finish</Chip>
+    hint = (
+      <Chip>
+        Sketching on {planeLabel}
+        <span className="max-md:hidden"> · R rectangle · C circle · L line · A arc · Esc to finish</span>
+      </Chip>
+    )
   } else if (sketchTool) {
     hint = <Chip>Pick a plane to sketch on</Chip>
   } else if (extrude.picking) {
@@ -267,6 +277,7 @@ export function WorkspaceView() {
           Finish sketch
         </Button>
       ) : null}
+      {sketching ? <SketchStatus /> : null}
       {hint}
     </>
   )

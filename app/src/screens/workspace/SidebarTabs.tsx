@@ -3,6 +3,7 @@ import { ArrowUpFromLine, Box, History, PenLine, Variable } from 'lucide-react'
 import { deleteFeature, renameFeature, setBodyVisible } from '../../doc/commands'
 import { useProjectStore } from '../../doc/store'
 import type { Feature } from '../../doc/types'
+import { ConstraintList } from '../../sketch/ConstraintList'
 import { ContextMenu } from '../../ui/ContextMenu'
 import { EmptyState } from '../../ui/EmptyState'
 import { Tree } from '../../ui/Tree'
@@ -50,29 +51,32 @@ export function HistoryTab({ statuses }: { statuses?: FeatureStatuses }) {
   }
 
   return (
-    <ContextMenu
-      items={[
-        { label: 'Edit', onSelect: () => menuId && setEditing(menuId) },
-        { type: 'separator' },
-        { label: 'Delete', shortcut: 'Del', danger: true, onSelect: () => menuId && deleteFeature(menuId) },
-      ]}
-    >
-      <div
-        onContextMenuCapture={(e) => {
-          const row = (e.target as HTMLElement).closest<HTMLElement>('[data-tree-id]')
-          setMenuId(row?.dataset.treeId ?? null)
-        }}
+    <>
+      <ContextMenu
+        items={[
+          { label: 'Edit', onSelect: () => menuId && setEditing(menuId) },
+          { type: 'separator' },
+          { label: 'Delete', shortcut: 'Del', danger: true, onSelect: () => menuId && deleteFeature(menuId) },
+        ]}
       >
-        <Tree
-          label="History"
-          nodes={nodes}
-          selectedId={editingId ?? undefined}
-          onSelect={setEditing}
-          onRename={renameFeature}
-          onDelete={deleteFeature}
-        />
-      </div>
-    </ContextMenu>
+        <div
+          onContextMenuCapture={(e) => {
+            const row = (e.target as HTMLElement).closest<HTMLElement>('[data-tree-id]')
+            setMenuId(row?.dataset.treeId ?? null)
+          }}
+        >
+          <Tree
+            label="History"
+            nodes={nodes}
+            selectedId={editingId ?? undefined}
+            onSelect={setEditing}
+            onRename={renameFeature}
+            onDelete={deleteFeature}
+          />
+        </div>
+      </ContextMenu>
+      <ConstraintList />
+    </>
   )
 }
 

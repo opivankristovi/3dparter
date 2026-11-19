@@ -22,11 +22,11 @@ const dot: Record<StatusChipVariant, string> = {
 function text(v: StatusChipVariant, dof: number): string {
   switch (v) {
     case 'under-defined':
-      return `${dof} degree${dof === 1 ? '' : 's'} of freedom`
+      return `Under-defined: ${dof} degree${dof === 1 ? '' : 's'} of freedom`
     case 'fully-defined':
       return 'Fully defined'
     case 'conflict':
-      return 'Conflicting constraints, remove one'
+      return 'Conflicting constraints: remove one'
     case 'saving':
       return 'Saving…'
     case 'saved':

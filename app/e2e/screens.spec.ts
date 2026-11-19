@@ -4,7 +4,7 @@ import { mkdirSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { Page, TestInfo } from '@playwright/test'
 import { expect, test } from './fixtures'
-import { buildBox, drawRectangle, extrudeCard, newProject, toolButton, waitCameraStable } from './helpers'
+import { buildBox, clickWorld, drawRectangle, extrudeCard, newProject, toolButton, waitCameraStable } from './helpers'
 
 function outFile(info: TestInfo, name: string): string {
   const dir = resolve(info.config.rootDir, '..', '..', 'replica', 'clone-screens')
@@ -30,11 +30,26 @@ test.describe('clone screens', () => {
     await capture(page, info, 'S03.png')
   })
 
-  test('S04 sketching with a rectangle', async ({ page }, info) => {
+  /** A fully defined 40 x 20 rectangle, its bottom side selected so the constraint bar shows. */
+  async function sketchWithConstraints(page: Page) {
     await newProject(page)
     await drawRectangle(page)
+    await toolButton(page, 'Rectangle').click() // back to selection mode
+    await clickWorld(page, [20, 0, 0])
+    await expect(page.getByRole('toolbar', { name: 'Constraints', exact: true })).toBeVisible()
+    await expect(page.getByRole('status').filter({ hasText: 'Fully defined' })).toBeVisible()
+    await page.mouse.move(2, 2) // out of the way of tooltips
     await waitCameraStable(page)
+  }
+
+  test('S04 sketching with constraints', async ({ page }, info) => {
+    await sketchWithConstraints(page)
     await capture(page, info, 'S04.png')
+  })
+
+  test('S04-390 sketching with constraints on a phone @mobile', async ({ page }, info) => {
+    await sketchWithConstraints(page)
+    await capture(page, info, 'S04-390.png')
   })
 
   test('S05 Extrude card open', async ({ page }, info) => {

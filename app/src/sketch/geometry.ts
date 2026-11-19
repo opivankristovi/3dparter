@@ -1,5 +1,5 @@
 // Pure sketch maths: plane frames, ray hits, shape builders and snapping. No three.js, no DOM.
-import type { CircleEntity, LineEntity, PlaneFrame, SketchEntity, Vec2, Vec3 } from '../doc/types'
+import type { ArcEntity, CircleEntity, LineEntity, PlaneFrame, SketchEntity, Vec2, Vec3 } from '../doc/types'
 
 const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 
@@ -73,7 +73,10 @@ export function snapTargets(entities: SketchEntity[]): Vec2[] {
   const out: Vec2[] = []
   for (const e of entities) {
     if (e.type === 'line') out.push(e.a, e.b)
-    else out.push(e.center)
+    else if (e.type === 'arc') {
+      out.push(e.center)
+      for (const t of [e.startAngle, e.endAngle]) out.push([e.center[0] + e.radius * Math.cos(t), e.center[1] + e.radius * Math.sin(t)])
+    } else out.push(e.center)
   }
   return out
 }
@@ -122,7 +125,22 @@ export function distToSegment(p: Vec2, a: Vec2, b: Vec2): number {
   return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy))
 }
 
-/** The entity nearest to p within `tolMm`, or null. Lines by segment distance, circles by distance to the rim. */
+/** Distance from p to an arc: to the curve inside its sweep, to the nearer end outside it. */
+export function distToArc(p: Vec2, e: ArcEntity): number {
+  const dc = Math.hypot(p[0] - e.center[0], p[1] - e.center[1])
+  const TWO_PI = Math.PI * 2
+  let sweep = (e.endAngle - e.startAngle) % TWO_PI
+  if (sweep < 0) sweep += TWO_PI
+  let rel = (Math.atan2(p[1] - e.center[1], p[0] - e.center[0]) - e.startAngle) % TWO_PI
+  if (rel < 0) rel += TWO_PI
+  if (rel <= sweep || sweep < 1e-9) return Math.abs(dc - e.radius)
+  const end = (t: number): Vec2 => [e.center[0] + e.radius * Math.cos(t), e.center[1] + e.radius * Math.sin(t)]
+  const a = end(e.startAngle)
+  const b = end(e.endAngle)
+  return Math.min(Math.hypot(p[0] - a[0], p[1] - a[1]), Math.hypot(p[0] - b[0], p[1] - b[1]))
+}
+
+/** The entity nearest to p within `tolMm`, or null. Lines by segment distance, circles and arcs by distance to the rim. */
 export function entityAt(entities: SketchEntity[], p: Vec2, tolMm: number): SketchEntity | null {
   let best: SketchEntity | null = null
   let bestD = tolMm
@@ -130,6 +148,7 @@ export function entityAt(entities: SketchEntity[], p: Vec2, tolMm: number): Sket
     let d = Infinity
     if (e.type === 'line') d = distToSegment(p, e.a, e.b)
     else if (e.type === 'circle') d = Math.abs(Math.hypot(p[0] - e.center[0], p[1] - e.center[1]) - e.radius)
+    else d = distToArc(p, e)
     if (d <= bestD) {
       best = e
       bestD = d

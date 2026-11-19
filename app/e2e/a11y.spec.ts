@@ -40,6 +40,18 @@ test.describe('F01-E10 axe scans', () => {
     await scan(page, 'S03 while sketching')
   })
 
+  test('F01-E10 S04 sketch with constraints, bar and dimension field', async ({ page }) => {
+    await newProject(page)
+    await drawRectangle(page)
+    await toolButton(page, 'Rectangle').click() // selection mode
+    await clickWorld(page, [20, 0, 0])
+    await expect(page.getByRole('toolbar', { name: 'Constraints', exact: true })).toBeVisible()
+    await scan(page, 'S04 constraint bar and overlay')
+    await page.getByRole('button', { name: /Length dimension 40 mm/ }).dblclick()
+    await expect(page.getByRole('group', { name: 'Length value' })).toBeVisible()
+    await scan(page, 'S04 dimension field')
+  })
+
   test('F01-E10 S05 Extrude card open', async ({ page }) => {
     await newProject(page)
     await drawRectangle(page)

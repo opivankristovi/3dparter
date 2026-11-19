@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { ArrowUpFromLine, Circle, RectangleHorizontal, Slash } from 'lucide-react'
+import { ArrowUpFromLine, Circle, RectangleHorizontal, Slash, Spline } from 'lucide-react'
 import { Toolbar, ToolbarSeparator } from '../../ui/Toolbar'
 import { ToolButton } from '../../ui/ToolButton'
 import { cn } from '../../ui/cn'
@@ -18,6 +18,7 @@ export const SKETCH_TOOLS: ToolDef[] = [
   { id: 'sketch.rectangle', label: 'Rectangle', icon: <RectangleHorizontal {...i} />, shortcut: 'R', kind: 'sketch' },
   { id: 'sketch.circle', label: 'Circle', icon: <Circle {...i} />, shortcut: 'C', kind: 'sketch' },
   { id: 'sketch.line', label: 'Line', icon: <Slash {...i} />, shortcut: 'L', kind: 'sketch' },
+  { id: 'sketch.arc', label: 'Arc', icon: <Spline {...i} />, shortcut: 'A', kind: 'sketch' },
 ]
 export const SOLID_TOOLS: ToolDef[] = [
   { id: 'extrude', label: 'Extrude', icon: <ArrowUpFromLine {...i} />, shortcut: 'E', kind: 'solid' },
