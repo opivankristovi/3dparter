@@ -2,7 +2,7 @@
 // Render on demand: a frame is drawn only when something changed or the camera moves.
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
-import { acceleratedRaycast, computeBoundsTree, disposeBoundsTree } from 'three-mesh-bvh'
+import { createPickGeometry } from './pickGeometry'
 import { ORIGIN_PLANES, ORIGIN_PLANE_LABELS } from '../doc/types'
 import type { OriginPlaneName, PlaneFrame, ProjectDocument, Ref, SketchEntity, Vec2, Vec3 } from '../doc/types'
 import type { MeshData, SketchRegionData } from '../kernel/api'
@@ -10,9 +10,6 @@ import { circlePolyline, localToWorld, rayPlane, worldToLocal } from '../sketch/
 import { buildGroups, faceNameAtTriangle, sortFaces } from './pick'
 import type { FaceRange } from './pick'
 
-THREE.BufferGeometry.prototype.computeBoundsTree = computeBoundsTree
-THREE.BufferGeometry.prototype.disposeBoundsTree = disposeBoundsTree
-THREE.Mesh.prototype.raycast = acceleratedRaycast
 
 const TOKEN_NAMES = [
   'viewport-bg',
@@ -521,10 +518,7 @@ export class ViewportEngine {
     geo.setIndex(new THREE.BufferAttribute(data.indices, 1))
 
     // A twin geometry for raycasting: same buffers, no draw groups, with a BVH.
-    const pickGeo = new THREE.BufferGeometry()
-    pickGeo.setAttribute('position', geo.getAttribute('position'))
-    pickGeo.setIndex(geo.getIndex())
-    pickGeo.computeBoundsTree()
+    const pickGeo = createPickGeometry(geo.getAttribute('position') as THREE.BufferAttribute, geo.getIndex()!)
 
     const mesh = new THREE.Mesh(geo, this.bodyMats)
     const pick = new THREE.Mesh(pickGeo, this.pickMat)
