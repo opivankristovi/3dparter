@@ -56,7 +56,7 @@ test.describe('F11 manage projects', () => {
   test('F11-H2 delete and undo from the toast', async ({ page }) => {
     await page.goto('/')
     await deleteViaMenu(page, SEED)
-    await expect(page.getByText(`Moved '${SEED}' to Trash`)).toBeVisible()
+    await expect(page.getByText(`Moved '${SEED}' to Trash`, { exact: true })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'No projects yet' })).toBeVisible()
     await page.getByRole('button', { name: 'Undo' }).click()
     await expect(page.getByRole('main').getByRole('link', { name: new RegExp(`^${SEED}, `) })).toBeVisible()

@@ -1,5 +1,5 @@
 // The Extrude tool: picks a profile, previews the solid through a draft feature, and applies it as one undo step.
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { ArrowUpFromLine } from 'lucide-react'
 import { addFeature, newId, nextFeatureName, updateFeatureParams } from '../doc/commands'
@@ -160,7 +160,18 @@ interface CardProps {
 }
 
 function ExtrudeCard({ draft, units, busy, failure, editingStep, onChange, onApply, onCancel }: CardProps) {
-  const [typed, setTyped] = useState<string | null>(null)
+  const [typed, setTypedState] = useState<string | null>(null)
+  // Mirrors `typed` synchronously. Enter in the field commits and applies in the same event, before React
+  // re-renders, so Apply must not trust the `applyDisabled` it was rendered with (BUG-002).
+  const typedNow = useRef<string | null>(null)
+  const setTyped = (t: string | null) => {
+    typedNow.current = t
+    setTypedState(t)
+  }
+  const guardedApply = () => {
+    if (typedNow.current !== null) return
+    onApply()
+  }
   const p = draft.params
   const mm = Number(p.distance)
   const shown = typed ?? (Number.isFinite(mm) ? formatDisplay(mm, units) : p.distance)
@@ -174,7 +185,7 @@ function ExtrudeCard({ draft, units, busy, failure, editingStep, onChange, onApp
       editingStep={editingStep}
       failure={noProfile ? { message: 'Pick a shape to extrude.' } : failure ? { message: failure } : undefined}
       applyDisabled={busy || typed !== null || noProfile || !!failure}
-      onApply={onApply}
+      onApply={guardedApply}
       onCancel={onCancel}
     >
       <NumericInput

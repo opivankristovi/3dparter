@@ -69,7 +69,7 @@ function ProjectName({ name, onRename }: { name: string; onRename?: (n: string) 
   return (
     <button
       type="button"
-      title="Double-click or press F2 to rename"
+      title={`${name} (double-click or press F2 to rename)`}
       onDoubleClick={() => {
         setDraft(name)
         setEditing(true)
