@@ -14,6 +14,7 @@ import { endSketch, finishSketch, startSketchOn } from '../../sketch/session'
 import { Button } from '../../ui/Button'
 import { IconButton } from '../../ui/IconButton'
 import { ProgressIndicator } from '../../ui/ProgressIndicator'
+import { installTestHook } from '../../testing/hook'
 import { ViewportEngine } from '../../viewport/engine'
 import { Viewport } from '../../viewport/Viewport'
 import type { ExportOptions } from '../dialogs/ExportDialog'
@@ -77,6 +78,11 @@ export function WorkspaceView() {
   useHistoryEdit()
 
   const [engine, setEngine] = useState<ViewportEngine | null>(null)
+
+  // Dev-only test hook (no-op in production builds).
+  const engineReady = useRef(false)
+  engineReady.current = kernel.engine === 'ready'
+  useEffect(() => (engine ? installTestHook(engine, () => engineReady.current) : undefined), [engine])
 
   const sketching = activeSketchId !== null
   const sketchTool = activeTool?.startsWith('sketch.') ?? false

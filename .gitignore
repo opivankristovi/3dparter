@@ -3,3 +3,6 @@ dist/
 *.log
 .DS_Store
 app/src/styles/tokens.css
+e2e-results.json
+test-results/
+playwright-report/
