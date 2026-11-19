@@ -66,10 +66,48 @@ export interface ArcEntity extends EntityBase {
 }
 export type SketchEntity = LineEntity | CircleEntity | ArcEntity
 
-/** Constraints arrive with the solver in M1. M0 sketches have an empty list. */
+/**
+ * Sketch constraints. `entityIds` holds REFS, in the order the constraint type expects:
+ *   "<entityId>"                    the whole entity
+ *   "<entityId>.<a|b|center|start|end>"  a point of it (line a/b, circle center, arc center/start/end)
+ *   "origin"                        the fixed point (0, 0)
+ *   "xAxis" | "yAxis"               fixed lines through the origin
+ * Geometric types take refs only; dimensional types also carry `value` (mm for lengths, DEGREES for
+ * angles). `driving: false` is a reference dimension: measured, never sent to the solver.
+ *   coincident (pt,pt)  pointOnEntity (pt, line|circle|arc)  horizontal/vertical (line | pt,pt)
+ *   parallel, perpendicular (line,line)  tangent (line|circle|arc pairs, or two endpoints)
+ *   equal (line,line | circle/arc,circle/arc)  midpoint (pt,line)  concentric (c/a,c/a)
+ *   symmetric (pt,pt,line)  fix (pt or entity)
+ *   distance (pt,pt)  length (line)  horizontalDistance/verticalDistance (pt,pt, signed p2 - p1)
+ *   pointLineDistance (pt,line)  radius/diameter (circle|arc)  angle (line,line)
+ */
+export type GeometricConstraintType =
+  | 'coincident'
+  | 'pointOnEntity'
+  | 'horizontal'
+  | 'vertical'
+  | 'parallel'
+  | 'perpendicular'
+  | 'tangent'
+  | 'equal'
+  | 'midpoint'
+  | 'concentric'
+  | 'symmetric'
+  | 'fix'
+export type DimensionalConstraintType =
+  | 'distance'
+  | 'length'
+  | 'horizontalDistance'
+  | 'verticalDistance'
+  | 'pointLineDistance'
+  | 'radius'
+  | 'diameter'
+  | 'angle'
+export type ConstraintType = GeometricConstraintType | DimensionalConstraintType
+
 export interface SketchConstraint {
   id: string
-  type: string
+  type: ConstraintType
   entityIds: string[]
   value?: Expr
   driving: boolean
