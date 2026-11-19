@@ -70,7 +70,7 @@ export function ParameterCard({
       onKeyDown={onKeyDown}
       className={cn('w-(--layout-card-w) rounded-lg bg-surface-raised shadow-panel', className)}
     >
-      <header className="flex items-center gap-2 px-3 pt-3 pb-2">
+      <div className="flex items-center gap-2 px-3 pt-3 pb-2">
         <span aria-hidden="true" className="text-text-muted">
           {icon}
         </span>
@@ -81,7 +81,7 @@ export function ParameterCard({
           <span className="rounded-pill bg-accent-subtle px-2 text-xs text-accent">Editing step {editingStep}</span>
         ) : null}
         <IconButton label="Close" icon={<X size={16} strokeWidth={1.75} />} size={28} onClick={onCancel} />
-      </header>
+      </div>
       {busy ? <ProgressIndicator label="Updating preview" /> : <div className="h-0.5" />}
       <div ref={body} className="flex flex-col gap-2 p-3">
         {failure ? (

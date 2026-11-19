@@ -183,9 +183,9 @@ function Shell({
 
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-viewport-bg">
-      <div data-viewport-host className="absolute inset-0">
+      <main data-viewport-host aria-label="3D view" className="absolute inset-0">
         {viewport}
-      </div>
+      </main>
 
       <div className="absolute inset-x-2 top-2 z-10">
         <TopBar
@@ -227,30 +227,37 @@ function Shell({
         />
       </div>
 
-      {tablet ? (
-        <WorkspaceToolRail
-          orientation="vertical"
-          activeTool={activeTool}
-          onToolChange={setActiveTool}
-          className={cn('absolute left-2 z-10', BELOW_TOPBAR)}
-        />
-      ) : (
-        <WorkspaceToolRail
-          orientation="horizontal"
-          activeTool={activeTool}
-          onToolChange={setActiveTool}
-          className="absolute inset-x-2 bottom-2 z-10"
-        />
-      )}
+      <nav aria-label="Tools" className="contents">
+        {tablet ? (
+          <WorkspaceToolRail
+            orientation="vertical"
+            activeTool={activeTool}
+            onToolChange={setActiveTool}
+            className={cn('absolute left-2 z-10', BELOW_TOPBAR)}
+          />
+        ) : (
+          <WorkspaceToolRail
+            orientation="horizontal"
+            activeTool={activeTool}
+            onToolChange={setActiveTool}
+            className="absolute inset-x-2 bottom-2 z-10"
+          />
+        )}
+      </nav>
 
       {desktop ? (
-        <div className={cn('absolute right-2 bottom-2 z-10 flex', BELOW_TOPBAR)}>{sidebar}</div>
+        <aside aria-label="Project panels" className={cn('absolute right-2 bottom-2 z-10 flex', BELOW_TOPBAR)}>
+          {sidebar}
+        </aside>
       ) : drawerOpen ? (
-        <div className={cn('absolute right-2 z-20 flex', BELOW_TOPBAR, tablet ? 'bottom-2' : 'bottom-16')}>{sidebar}</div>
+        <aside aria-label="Project panels" className={cn('absolute right-2 z-20 flex', BELOW_TOPBAR, tablet ? 'bottom-2' : 'bottom-16')}>
+          {sidebar}
+        </aside>
       ) : null}
 
       {overlay ? (
-        <div
+        <section
+          aria-label="Tool options"
           className={cn(
             'pointer-events-none absolute z-10 flex',
             desktop
@@ -261,11 +268,12 @@ function Shell({
           )}
         >
           <div className="pointer-events-auto max-w-full">{overlay}</div>
-        </div>
+        </section>
       ) : null}
 
       {problem || status ? (
-        <div
+        <section
+          aria-label="Messages"
           className={cn(
             'absolute left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-2',
             tablet ? 'bottom-4' : 'bottom-16',
@@ -285,7 +293,7 @@ function Shell({
             </div>
           ) : null}
           {status}
-        </div>
+        </section>
       ) : null}
 
       <ExportDialog

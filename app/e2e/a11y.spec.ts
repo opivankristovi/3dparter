@@ -3,7 +3,7 @@ import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 import { clickWorld, drawRectangle, extrudeCard, newProject, pickTopPlane, toolButton, waitCameraStable } from './helpers'
 
-/** Scans the page; fails on serious / critical violations and lists every violation (id, impact, targets). */
+/** Scans the page; fails on moderate, serious and critical violations and lists every violation (id, impact, targets). */
 async function scan(page: Page, screen: string) {
   const results = await new AxeBuilder({ page }).exclude('canvas').analyze()
   const lines = results.violations.map(
@@ -11,7 +11,7 @@ async function scan(page: Page, screen: string) {
   )
   for (const l of lines) console.log(`AXE ${screen}: ${l}`)
   if (lines.length === 0) console.log(`AXE ${screen}: no violations`)
-  const blocking = results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical')
+  const blocking = results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical' || v.impact === 'moderate')
   expect(
     blocking.map((v) => v.id),
     `axe violations on ${screen} (all, including minor/moderate):\n${lines.join('\n') || '(none)'}`,
