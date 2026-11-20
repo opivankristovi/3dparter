@@ -21,6 +21,7 @@ export type RefKind =
   | 'sketchEdge'
   | 'originPlane'
   | 'originAxis'
+  | 'constructionPlane'
 
 /**
  * A reference to geometry made by an earlier feature, by topological NAME, never by index.
@@ -31,6 +32,14 @@ export type RefKind =
  *   edge          '<faceName>|<faceName>' (the two adjacent face names, sorted), plus '#<n>' if several share a pair
  *   sketchRegion  '<sketchId>/region:<sorted entity ids of the outer loop, joined by ",">'
  *   sketchEdge    '<sketchId>/<entityId>'
+ * Added in M2:
+ *   originAxis         'X' | 'Y' | 'Z'
+ *   constructionPlane  '<planeFeatureId>'
+ *   face (revolve)     '<revolveId>/side/<entityId>' | '<revolveId>/cap:start|end'
+ *   face (fillet, chamfer)  '<featureId>/blend/<edge name>'
+ *   face (shell)       '<shellId>/inner/<original face name>'
+ *   A face split by a boolean keeps its name plus '#<n>' (stable geometric order). Faces a change
+ *   leaves alone keep their names. A ref whose name is gone is matched again by `hint` (with a warning).
  */
 export interface Ref {
   kind: RefKind
@@ -155,7 +164,83 @@ export interface ExtrudeFeature extends FeatureBase {
   }
 }
 
-export type Feature = SketchFeature | ExtrudeFeature
+// ---- M2 modelling features ----------------------------------------------------------------
+// Bodies are named after the feature that created them. A feature that changes a body (join, cut,
+// intersect, fillet, chamfer, shell, transform) replaces that body under the SAME name. Face and edge
+// names are carried through each change with OpenCascade's history (see kernel/naming.ts).
+// Lengths are mm; ANGLES IN EXPRESSIONS ARE DEGREES (like sketch angle dimensions).
+
+/** Rounds edges. Faces made by the fillet are named '<featureId>/blend/<edge name>'. */
+export interface FilletFeature extends FeatureBase {
+  type: 'fillet'
+  params: { edges: Ref[]; radius: Expr }
+}
+
+/** Bevels edges at an equal distance. Faces made are named '<featureId>/blend/<edge name>'. */
+export interface ChamferFeature extends FeatureBase {
+  type: 'chamfer'
+  params: { edges: Ref[]; distance: Expr }
+}
+
+/**
+ * Body-to-body boolean. `target` (a body ref) keeps its name; `tools` are consumed unless `keepTools`.
+ * union: target ∪ tools; subtract: target − tools; intersect: target ∩ tools.
+ */
+export interface BooleanFeature extends FeatureBase {
+  type: 'boolean'
+  params: { op: 'union' | 'subtract' | 'intersect'; target: Ref; tools: Ref[]; keepTools: boolean }
+}
+
+/**
+ * Revolves sketch regions around an axis: a line of the same sketch (sketchEdge ref, construction lines
+ * allowed) or an origin axis (originAxis ref 'X' | 'Y' | 'Z'). `angle` in degrees, 0 < angle <= 360.
+ * `mode` / `targets` work as for extrude. Faces: '<id>/side/<entityId>', '<id>/cap:start|end'.
+ */
+export interface RevolveFeature extends FeatureBase {
+  type: 'revolve'
+  params: { profiles: Ref[]; axis: Ref; angle: Expr; mode: BooleanMode; targets: Ref[] }
+}
+
+/** Hollows a body to a wall `thickness` (inwards), opening the `removeFaces`. */
+export interface ShellFeature extends FeatureBase {
+  type: 'shell'
+  params: { body: Ref; removeFaces: Ref[]; thickness: Expr }
+}
+
+/**
+ * Moves and/or rotates bodies: rotation (degrees, about `axis` through `pivot`) first, then translation.
+ * With `copy`, the originals stay and the copies are new bodies named '<featureId>:<n>' (n from 1).
+ */
+export interface TransformFeature extends FeatureBase {
+  type: 'transform'
+  params: {
+    bodies: Ref[]
+    translate: [Expr, Expr, Expr]
+    rotate: { axis: Vec3; pivot: Vec3; angle: Expr } | null
+    copy: boolean
+  }
+}
+
+/**
+ * A construction plane, offset along the base's normal and optionally tilted by `angle` (degrees) about
+ * the base frame's xDir through its origin. `base` is an originPlane, a flat face, or another plane.
+ * Referenced as { kind: 'constructionPlane', name: '<featureId>' }.
+ */
+export interface PlaneFeature extends FeatureBase {
+  type: 'plane'
+  params: { base: Ref; offset: Expr; angle: Expr }
+}
+
+export type Feature =
+  | SketchFeature
+  | ExtrudeFeature
+  | RevolveFeature
+  | FilletFeature
+  | ChamferFeature
+  | ShellFeature
+  | BooleanFeature
+  | TransformFeature
+  | PlaneFeature
 
 export interface Variable {
   id: string

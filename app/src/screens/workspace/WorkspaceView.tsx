@@ -53,6 +53,7 @@ function describe(refs: Ref[]): string {
     sketchEdge: 'Sketch line',
     originPlane: 'Plane',
     originAxis: 'Axis',
+    constructionPlane: 'Plane',
   }
   return `${names[refs[0].kind]} selected`
 }

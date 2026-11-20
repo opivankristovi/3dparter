@@ -196,7 +196,9 @@ export class Regenerator {
         const d = done.get(dep)
         if (d && !d.status.ok) return fail(ERR_EARLIER)
       }
-      return f.type === 'sketch' ? this.evalSketch(f, key) : this.evalExtrude(f, key, done)
+      if (f.type === 'sketch') return this.evalSketch(f, key)
+      if (f.type === 'extrude') return this.evalExtrude(f, key, done)
+      return fail('This kind of step arrives in a later version.')
     } catch (err) {
       return fail(plainError(err))
     }

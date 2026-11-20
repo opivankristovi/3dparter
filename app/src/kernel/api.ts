@@ -8,6 +8,8 @@ export interface FeatureStatus {
   ok: boolean
   /** Human-readable, written for the user, e.g. "This sketch has no closed shape to extrude." */
   message?: string
+  /** Set when the step worked but something was matched again by position (a name was gone). */
+  warning?: string
 }
 
 export interface RegenResult {

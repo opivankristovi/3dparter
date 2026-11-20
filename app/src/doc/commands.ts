@@ -6,7 +6,17 @@ export function newId(): string {
   return crypto.randomUUID()
 }
 
-const TYPE_LABEL: Record<Feature['type'], string> = { sketch: 'Sketch', extrude: 'Extrude' }
+const TYPE_LABEL: Record<Feature['type'], string> = {
+  sketch: 'Sketch',
+  extrude: 'Extrude',
+  revolve: 'Revolve',
+  fillet: 'Fillet',
+  chamfer: 'Chamfer',
+  shell: 'Shell',
+  boolean: 'Combine',
+  transform: 'Move',
+  plane: 'Plane',
+}
 
 /** "Sketch 1", "Extrude 2", ... The number is one more than the highest in use for that type. */
 export function nextFeatureName(doc: ProjectDocument, type: Feature['type']): string {
@@ -29,7 +39,7 @@ function nextBodyName(doc: ProjectDocument): string {
 
 /** A feature that starts a new solid owns a bodies entry keyed by its id. */
 function syncBodyEntry(draft: ProjectDocument, f: Feature) {
-  const makesBody = f.type === 'extrude' && f.params.mode === 'new'
+  const makesBody = (f.type === 'extrude' || f.type === 'revolve') && f.params.mode === 'new'
   if (makesBody && !draft.bodies[f.id]) {
     draft.bodies[f.id] = { name: nextBodyName(draft), color: null, opacity: 1, visible: true, itemFolderId: null }
   } else if (!makesBody && draft.bodies[f.id]) {

@@ -20,7 +20,7 @@ export function useHistoryEdit() {
         enterSketch(f.id)
         s.setActiveTool(null)
       }
-    } else if (draft?.id !== f.id) {
+    } else if (f.type === 'extrude' && draft?.id !== f.id) {
       useToolStore.getState().setActiveSketch(null)
       useToolStore.getState().setDraft(
         { ...f, params: { ...f.params, profiles: [...f.params.profiles], targets: [...f.params.targets] } },
