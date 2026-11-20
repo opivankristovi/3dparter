@@ -1,7 +1,21 @@
 import AxeBuilder from '@axe-core/playwright'
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures'
-import { clickWorld, drawRectangle, extrudeCard, newProject, pickTopPlane, toolButton, waitCameraStable } from './helpers'
+import {
+  addRectangleSketch,
+  applyExtrude,
+  bodyMeshes,
+  buildBox,
+  clickPickableNear,
+  clickWorld,
+  drawRectangle,
+  extrudeCard,
+  newProject,
+  pickTopPlane,
+  settle,
+  toolButton,
+  waitCameraStable,
+} from './helpers'
 
 /** Scans the page; fails on moderate, serious and critical violations and lists every violation (id, impact, targets). */
 async function scan(page: Page, screen: string) {
@@ -74,5 +88,80 @@ test.describe('F01-E10 axe scans', () => {
     await page.getByRole('button', { name: 'Settings' }).click()
     await expect(page.getByRole('dialog', { name: 'Settings' })).toBeVisible()
     await scan(page, 'S12 Settings dialog')
+  })
+})
+
+test.describe('F01-E10 axe scans, M2 tool cards', () => {
+  const card = (page: Page, name: string) => page.getByRole('dialog', { name, exact: true })
+
+  async function boxReady(page: Page) {
+    await newProject(page)
+    await buildBox(page)
+    await settle(page)
+    await waitCameraStable(page)
+  }
+
+  test('F01-E10 M2 Fillet card open with an edge picked', async ({ page }) => {
+    await boxReady(page)
+    await toolButton(page, 'Fillet').click()
+    await expect(card(page, 'Fillet')).toBeVisible()
+    await clickPickableNear(page, [20, 0, 10], 'edge')
+    await expect(card(page, 'Fillet').getByText('1 edge')).toBeVisible()
+    await settle(page)
+    await scan(page, 'M2 Fillet card')
+  })
+
+  test('F01-E10 M2 Combine card open with two solids picked', async ({ page }) => {
+    await boxReady(page)
+    await addRectangleSketch(page, [20, 10, 0], '40', '20')
+    await applyExtrude(page)
+    await expect.poll(() => bodyMeshes(page)).toBe(2)
+    await settle(page)
+    await page.keyboard.press('Escape')
+    await toolButton(page, 'Combine').click()
+    await expect(card(page, 'Combine')).toBeVisible()
+    await page.getByRole('tab', { name: 'Items' }).click()
+    const tree = page.getByRole('tree', { name: 'Solids' })
+    await tree.getByRole('treeitem', { name: 'Body 1' }).click()
+    await tree.getByRole('treeitem', { name: 'Body 2' }).click()
+    await settle(page)
+    await scan(page, 'M2 Combine card')
+  })
+
+  test('F01-E10 M2 Revolve card open', async ({ page }) => {
+    await newProject(page)
+    await drawRectangle(page)
+    await page.getByRole('button', { name: 'Finish sketch' }).click()
+    await toolButton(page, 'Revolve').click()
+    await expect(card(page, 'Revolve')).toBeVisible()
+    await card(page, 'Revolve').getByRole('button', { name: 'Y axis' }).click()
+    await settle(page)
+    await scan(page, 'M2 Revolve card')
+  })
+
+  test('F01-E10 M2 Shell card open', async ({ page }) => {
+    await boxReady(page)
+    await toolButton(page, 'Shell').click()
+    await expect(card(page, 'Shell')).toBeVisible()
+    await clickPickableNear(page, [20, 10, 10], 'face')
+    await expect(card(page, 'Shell').getByText('1 face')).toBeVisible()
+    await settle(page)
+    await scan(page, 'M2 Shell card')
+  })
+
+  test('F01-E10 M2 Move card open', async ({ page }) => {
+    await boxReady(page)
+    await toolButton(page, 'Move').click()
+    await expect(card(page, 'Move')).toBeVisible()
+    await settle(page)
+    await scan(page, 'M2 Move card')
+  })
+
+  test('F01-E10 M2 Plane card open', async ({ page }) => {
+    await boxReady(page)
+    await toolButton(page, 'Plane').click()
+    await expect(card(page, 'Plane')).toBeVisible()
+    await settle(page)
+    await scan(page, 'M2 Plane card')
   })
 })

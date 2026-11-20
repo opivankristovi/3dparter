@@ -185,3 +185,137 @@ export async function hasHorizontalScroll(page: Page): Promise<boolean> {
 export async function isEllipsized(loc: Locator): Promise<boolean> {
   return loc.evaluate((el) => getComputedStyle(el).textOverflow === 'ellipsis' && el.scrollWidth > el.clientWidth)
 }
+
+// ---- M2 edge-case helpers -----------------------------------------------------------------------------------
+
+export const historyItem = (page: Page, name: string) =>
+  page.getByRole('tree', { name: 'History' }).getByRole('treeitem', { name: new RegExp(name) })
+
+/** Picks the Top (XY) origin plane when the document may already contain sketches. */
+export async function pickTopPlaneAgain(page: Page) {
+  const before = sketches(await doc(page)).length
+  let target: World | undefined
+  await expect
+    .poll(async () => {
+      target = await page.evaluate(() => {
+        const h = window.__3dshaper!
+        const candidates: [number, number, number][] = [
+          [10, -10, 0], [5, -15, 0], [15, -15, 0], [10, -20, 0], [-10, -10, 0], [-15, -5, 0], [20, -15, 0],
+          [30, -30, 0], [-30, 30, 0], [-30, -30, 0], [35, -35, 0], [-35, -5, 0], [-5, -35, 0], [20, 20, 0], [30, 30, 0],
+        ]
+        return candidates.find((c) => {
+          const [x, y] = h.toClient(c)
+          if (document.elementFromPoint(x, y) !== h.engine.canvas) return false
+          const ref = h.engine.pickAt(x, y)
+          return ref?.kind === 'originPlane' && ref.name === 'XY'
+        })
+      })
+      return Boolean(target)
+    })
+    .toBe(true)
+  await clickWorld(page, target!)
+  await expect.poll(async () => sketches(await doc(page)).length).toBe(before + 1)
+  await waitCameraStable(page)
+}
+
+/** Clicks a screen point near `world` where `engine.pickAt` returns the wanted kind (edge, face or body). */
+export async function clickPickableNear(page: Page, world: World, kind: 'edge' | 'face' | 'body') {
+  let pt: [number, number] | null = null
+  await expect
+    .poll(async () => {
+      pt = await page.evaluate(
+        ({ w, want }) => {
+          const h = window.__3dshaper!
+          const [cx, cy] = h.toClient(w)
+          const offsets: [number, number][] = [[0, 0]]
+          for (let r = 1; r <= 4; r++) offsets.push([0, r], [0, -r], [r, 0], [-r, 0])
+          for (const [dx, dy] of offsets) {
+            const x = cx + dx
+            const y = cy + dy
+            if (document.elementFromPoint(x, y) !== h.engine.canvas) continue
+            const r = h.engine.pickAt(x, y)
+            if (r?.kind === want) return [x, y] as [number, number]
+          }
+          return null
+        },
+        { w: world, want: kind },
+      )
+      return Boolean(pt)
+    })
+    .toBe(true)
+  await page.mouse.click(pt![0], pt![1])
+}
+
+/** Draws a closed rectangle (corner at `at`, size w x h) on a fresh Top-plane sketch and finishes it. */
+export async function addRectangleSketch(page: Page, at: World, w: string, h: string) {
+  await toolButton(page, 'Rectangle').click()
+  await pickTopPlaneAgain(page)
+  await clickWorld(page, at)
+  await expect(page.getByRole('group', { name: 'Shape size' })).toBeVisible()
+  await page.keyboard.type(w)
+  await page.keyboard.press('Tab')
+  await page.keyboard.type(h)
+  await page.keyboard.press('Enter')
+  await page.getByRole('button', { name: 'Finish sketch' }).click()
+}
+
+/** Finish-sketch is already done: Extrude -> Apply (new body). */
+export async function applyExtrude(page: Page) {
+  await toolButton(page, 'Extrude').click()
+  await expect(extrudeCard(page)).toBeVisible()
+  await extrudeCard(page).getByRole('button', { name: 'Apply' }).click()
+  await expect(extrudeCard(page)).toBeHidden()
+}
+
+/** Edge-blend tool on `tool` (Fillet or Chamfer): pick the edges near the given world points, type the value, Apply. */
+export async function blendEdges(page: Page, tool: 'Fillet' | 'Chamfer', edges: World[], value: string) {
+  await toolButton(page, tool).click()
+  const card = page.getByRole('dialog', { name: tool, exact: true })
+  await expect(card).toBeVisible()
+  for (const e of edges) await clickPickableNear(page, e, 'edge')
+  const field = card.getByLabel(tool === 'Fillet' ? 'Radius' : 'Distance')
+  await field.fill(value)
+  await field.blur()
+  await settle(page)
+  await card.getByRole('button', { name: 'Apply' }).click()
+  await expect(card).toBeHidden()
+  await settle(page)
+}
+
+export interface BodyStat {
+  id: string
+  volume: number
+  min: [number, number, number]
+  max: [number, number, number]
+}
+
+/** Volume and bounding box of every rendered solid, from the meshes the viewport holds. */
+export async function bodyStats(page: Page): Promise<BodyStat[]> {
+  return page.evaluate(() => {
+    const bodies = (window.__3dshaper!.engine as unknown as { bodies: Map<string, { id: string; data: { positions: Float32Array; indices: Uint32Array } }> }).bodies
+    return [...bodies.values()].map((b) => {
+      const p = b.data.positions
+      const ix = b.data.indices
+      const min: [number, number, number] = [Infinity, Infinity, Infinity]
+      const max: [number, number, number] = [-Infinity, -Infinity, -Infinity]
+      for (let i = 0; i < p.length; i += 3) {
+        for (let k = 0; k < 3; k++) {
+          min[k] = Math.min(min[k], p[i + k])
+          max[k] = Math.max(max[k], p[i + k])
+        }
+      }
+      let vol = 0
+      for (let t = 0; t < ix.length; t += 3) {
+        const a = ix[t] * 3
+        const b2 = ix[t + 1] * 3
+        const c = ix[t + 2] * 3
+        vol +=
+          (p[a] * (p[b2 + 1] * p[c + 2] - p[b2 + 2] * p[c + 1]) -
+            p[a + 1] * (p[b2] * p[c + 2] - p[b2 + 2] * p[c]) +
+            p[a + 2] * (p[b2] * p[c + 1] - p[b2 + 1] * p[c])) /
+          6
+      }
+      return { id: b.id, volume: vol, min, max }
+    })
+  })
+}
