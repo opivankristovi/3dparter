@@ -16,6 +16,7 @@ import { ProgressIndicator } from '../ui/ProgressIndicator'
 import { SidebarPanel } from '../ui/SidebarPanel'
 import { TopBar } from '../ui/TopBar'
 import { cn } from '../ui/cn'
+import type { ViewportEngine } from '../viewport/engine'
 import { ExportDialog } from './dialogs/ExportDialog'
 import type { ExportOptions } from './dialogs/ExportDialog'
 import { SettingsDialog } from './dialogs/SettingsDialog'
@@ -23,6 +24,7 @@ import { NotFound } from './NotFound'
 import { SaveChip } from './workspace/SaveChip'
 import { WorkspaceView } from './workspace/WorkspaceView'
 import { HistoryTab, ItemsTab, VariablesTab } from './workspace/SidebarTabs'
+import { ViewColumn } from './workspace/ViewColumn'
 import type { FeatureStatuses } from './workspace/SidebarTabs'
 import { useToolStore } from './workspace/toolStore'
 import { ALL_TOOLS, TOOL_KEYS, WorkspaceToolRail } from './workspace/WorkspaceToolRail'
@@ -39,8 +41,10 @@ export interface WorkspaceProps {
   status?: ReactNode
   /** The kernel is regenerating: thin progress line along the top bar. */
   busy?: boolean
-  /** Extra top-bar buttons (e.g. zoom to fit), shown from the desktop breakpoint up. */
+  /** Extra top-bar buttons (e.g. zoom to fit), shown on tablets; on desktop the view column has them. */
   topBarActions?: ReactNode
+  /** What the right-hand view column (desktop) needs: the camera, and zoom to fit. */
+  view?: { engine: ViewportEngine | null; onFit: () => void }
   /** Writes the file for the Export dialog. Without it, Export reports that it is not connected. */
   onExport?: (opts: ExportOptions) => Promise<void>
 }
@@ -54,7 +58,7 @@ export function WorkspaceRoute() {
   return <WorkspaceView key={id} />
 }
 
-export function Workspace({ viewport, overlay, statuses, status, busy, topBarActions, onExport }: WorkspaceProps) {
+export function Workspace({ viewport, overlay, statuses, status, busy, topBarActions, view, onExport }: WorkspaceProps) {
   const { id } = useParams<{ id: string }>()
   const [, navigate] = useLocation()
   const [load, setLoad] = useState<'loading' | 'ok' | 'not-found'>('loading')
@@ -91,6 +95,7 @@ export function Workspace({ viewport, overlay, statuses, status, busy, topBarAct
       status={status}
       busy={busy}
       topBarActions={topBarActions}
+      view={view}
       onExport={onExport}
       goHome={() => navigate('/')}
       navigate={navigate}
@@ -105,6 +110,7 @@ function Shell({
   status,
   busy,
   topBarActions,
+  view,
   onExport,
   goHome,
   navigate,
@@ -224,9 +230,7 @@ function Shell({
           hideMeasure
           compact={!tablet}
           actions={
-            desktop ? (
-              topBarActions
-            ) : tablet ? (
+            desktop ? undefined : tablet ? (
               <>
                 {topBarActions}
                 {panelToggle}
@@ -250,6 +254,7 @@ function Shell({
         {tablet ? (
           <WorkspaceToolRail
             orientation="vertical"
+            labelled={desktop}
             activeTool={activeTool}
             onToolChange={setActiveTool}
             className={cn('absolute left-2 z-10', BELOW_TOPBAR)}
@@ -265,9 +270,26 @@ function Shell({
       </nav>
 
       {desktop ? (
-        <aside aria-label="Project panels" className={cn('absolute right-2 bottom-2 z-10 flex', BELOW_TOPBAR)}>
-          {sidebar}
-        </aside>
+        <>
+          <aside
+            aria-label="Project panels"
+            className={cn('absolute right-[calc(var(--layout-viewcol-w)+1rem)] bottom-2 z-10 flex', BELOW_TOPBAR)}
+          >
+            {sidebar}
+          </aside>
+          <nav aria-label="View" className={cn('absolute right-2 z-10', BELOW_TOPBAR)}>
+            <ViewColumn
+              engine={view?.engine ?? null}
+              onFit={view?.onFit ?? (() => {})}
+              panelTab={tab}
+              panelOpen={sidebarOpen}
+              onOpenPanel={(t) => {
+                setTab(t)
+                setSidebarOpen(true)
+              }}
+            />
+          </nav>
+        </>
       ) : drawerOpen ? (
         <aside aria-label="Project panels" className={cn('absolute right-2 z-20 flex', BELOW_TOPBAR, tablet ? 'bottom-2' : 'bottom-16')}>
           {sidebar}
@@ -280,7 +302,7 @@ function Shell({
           className={cn(
             'pointer-events-none absolute z-10 flex',
             desktop
-              ? cn(BELOW_TOPBAR, 'right-[calc(var(--layout-sidebar-w)+1.5rem)]')
+              ? 'bottom-2 left-[calc(var(--layout-toolrail-labelled-w)+1rem)] items-end'
               : tablet
                 ? cn(BELOW_TOPBAR, 'right-2')
                 : 'inset-x-2 bottom-16 justify-center',
@@ -295,7 +317,8 @@ function Shell({
           aria-label="Messages"
           className={cn(
             'absolute left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-2',
-            tablet ? 'bottom-4' : 'bottom-16',
+            // On desktop an open tool card has its Cancel / Apply bar at the bottom centre: sit above it.
+            desktop && overlay ? 'bottom-20' : tablet ? 'bottom-4' : 'bottom-16',
           )}
         >
           {problem ? (

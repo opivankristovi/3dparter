@@ -31,6 +31,15 @@ export interface ParameterCardProps {
   className?: string
 }
 
+/** Key hint inside an action button; desktop only, and not part of the button's name. */
+function ActionKey({ children }: { children: string }) {
+  return (
+    <span aria-hidden="true" className="max-lg:hidden">
+      <kbd className="inline-flex items-center rounded-sm border border-current/40 px-1 font-sans text-xs tnum">{children}</kbd>
+    </span>
+  )
+}
+
 /** Non-modal dialog. Focus goes to the first field on open; Esc cancels; Enter in the last field applies. */
 export function ParameterCard({
   title,
@@ -92,12 +101,16 @@ export function ParameterCard({
         ) : null}
         {children}
       </div>
-      <footer className="flex justify-end gap-2 px-3 pb-3">
+      {/* Desktop: Cancel and Apply leave the card for an action bar at the bottom centre of the screen (still
+          inside the dialog, so Esc, Enter and the accessible tree stay as they are). */}
+      <footer className="flex justify-end gap-2 px-3 pb-3 lg:fixed lg:bottom-2 lg:left-1/2 lg:z-10 lg:-translate-x-1/2 lg:rounded-lg lg:bg-surface-raised lg:p-2 lg:shadow-panel">
         <Button variant="secondary" onClick={onCancel}>
           Cancel
+          <ActionKey>Esc</ActionKey>
         </Button>
         <Button variant="primary" onClick={onApply} disabled={applyDisabled}>
           Apply
+          <ActionKey>Enter</ActionKey>
         </Button>
       </footer>
     </section>

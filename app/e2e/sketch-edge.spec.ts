@@ -167,9 +167,9 @@ test.describe('sketch edge cases', () => {
     await historyItem(page, 'Sketch 1').click()
     await waitCameraStable(page)
     await toolButton(page, 'Rectangle').click()
-    // The camera zooms in on the sketch, so the second rectangle goes to the left of the first (the right is under the side panel).
-    await clickWorld(page, [-30, 5, 0])
-    await clickWorld(page, [-10, 15, 0])
+    // The camera frames the first rectangle closely, so the second one goes just to its left (the right is under the side panels).
+    await clickWorld(page, [-18, 2, 0])
+    await clickWorld(page, [-4, 14, 0])
     await expect.poll(async () => (await entitiesOf(page)).length).toBe(8)
     await page.getByRole('button', { name: 'Finish sketch' }).click()
     await expect(historyItem(page, 'Extrude 1')).toBeVisible()

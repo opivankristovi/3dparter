@@ -22,11 +22,18 @@ export function Toolbar({ label, orientation = 'horizontal', className, children
   )
 }
 
-export function ToolbarSeparator({ orientation = 'horizontal' }: { orientation?: 'horizontal' | 'vertical' }) {
+export function ToolbarSeparator({
+  orientation = 'horizontal',
+  wide = false,
+}: {
+  orientation?: 'horizontal' | 'vertical'
+  /** Vertical toolbar only: the rule spans the full width of a labelled rail. */
+  wide?: boolean
+}) {
   // The separator runs across the toolbar, so a vertical toolbar gets a horizontal rule.
   return (
     <T.Separator
-      className={orientation === 'vertical' ? 'my-1 h-px w-8 bg-border' : 'mx-1 h-6 w-px bg-border'}
+      className={orientation === 'vertical' ? cn('my-1 h-px bg-border', wide ? 'w-full' : 'w-8') : 'mx-1 h-6 w-px bg-border'}
     />
   )
 }

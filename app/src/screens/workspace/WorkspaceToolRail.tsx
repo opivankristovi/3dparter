@@ -33,11 +33,14 @@ export interface WorkspaceToolRailProps {
   onToolChange: (id: string | null) => void
   /** Vertical rail at the left, or a horizontal bar along the bottom on phones. */
   orientation: 'vertical' | 'horizontal'
+  /** Vertical rail only: show each tool's name and key next to its icon, with the groups named. */
+  labelled?: boolean
   className?: string
 }
 
-export function WorkspaceToolRail({ activeTool, onToolChange, orientation, className }: WorkspaceToolRailProps) {
+export function WorkspaceToolRail({ activeTool, onToolChange, orientation, labelled = false, className }: WorkspaceToolRailProps) {
   const vertical = orientation === 'vertical'
+  const rows = vertical && labelled
   const render = (t: ToolDef) => (
     <ToolButton
       key={t.id}
@@ -47,20 +50,30 @@ export function WorkspaceToolRail({ activeTool, onToolChange, orientation, class
       kind={t.kind}
       active={activeTool === t.id}
       tooltipSide={vertical ? 'right' : 'top'}
+      layout={rows ? 'row' : 'icon'}
       onClick={() => onToolChange(activeTool === t.id ? null : t.id)}
     />
+  )
+  const caption = (text: string) => (
+    <span aria-hidden="true" className="px-1 pt-1 pb-0.5 text-xs text-text-muted">
+      {text}
+    </span>
   )
   return (
     <div
       className={cn(
         'bg-surface-raised shadow-panel',
-        vertical ? 'flex w-(--layout-toolrail-w) flex-col items-center rounded-lg py-2' : 'flex justify-center rounded-lg px-2 py-1',
+        vertical
+          ? cn('flex flex-col items-center rounded-lg py-2', rows ? 'w-(--layout-toolrail-labelled-w) px-2' : 'w-(--layout-toolrail-w)')
+          : 'flex justify-center rounded-lg px-2 py-1',
         className,
       )}
     >
-      <Toolbar label="Tools" orientation={orientation} className="gap-1">
+      <Toolbar label="Tools" orientation={orientation} className={cn('gap-1', rows && 'w-full items-stretch')}>
+        {rows ? caption('Draw') : null}
         {SKETCH_TOOLS.map(render)}
-        <ToolbarSeparator orientation={orientation} />
+        <ToolbarSeparator orientation={orientation} wide={rows} />
+        {rows ? caption('Build') : null}
         {SOLID_TOOLS.map(render)}
       </Toolbar>
     </div>

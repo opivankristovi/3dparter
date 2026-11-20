@@ -300,6 +300,7 @@ export function WorkspaceView() {
       topBarActions={
         <IconButton label="Zoom to fit" shortcut="F" icon={<Scan size={20} strokeWidth={1.75} />} onClick={() => void fit()} />
       }
+      view={{ engine, onFit: () => void fit() }}
       onExport={onExport}
     />
   )

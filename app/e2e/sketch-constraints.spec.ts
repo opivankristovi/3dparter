@@ -172,14 +172,15 @@ test.describe('sketch constraints', () => {
     await newProject(page)
     await toolButton(page, 'Rectangle').click()
     await pickTopPlane(page)
-    await clickWorld(page, [10, 10, 0])
-    await clickWorld(page, [50, 30, 0])
+    // A new sketch shows about 120 mm of height, with the side panels over the right edge: stay on the left.
+    await clickWorld(page, [-20, 5, 0])
+    await clickWorld(page, [10, 25, 0])
     await expect.poll(async () => (await entitiesOf(page)).length).toBe(4)
     await selectionMode(page, 'Rectangle')
     const original = JSON.stringify(await entitiesOf(page))
 
-    const [sx, sy] = await clientOf(page, [50, 30, 0])
-    const [ex, ey] = await clientOf(page, [60, 40, 0])
+    const [sx, sy] = await clientOf(page, [10, 25, 0])
+    const [ex, ey] = await clientOf(page, [25, 35, 0])
     await page.mouse.move(sx, sy)
     await page.mouse.down()
     await page.mouse.move((sx + ex) / 2, (sy + ey) / 2, { steps: 4 })
@@ -197,8 +198,8 @@ test.describe('sketch constraints', () => {
       const next = lines[(i + 1) % 4]
       near(Math.hypot(l.b[0] - next.a[0], l.b[1] - next.a[1]), 0, 1e-6)
     }
-    near(Math.max(...lines.flatMap((l) => [l.a[0], l.b[0]])), 60, 0.5)
-    near(Math.max(...lines.flatMap((l) => [l.a[1], l.b[1]])), 40, 0.5)
+    near(Math.max(...lines.flatMap((l) => [l.a[0], l.b[0]])), 25, 0.5)
+    near(Math.max(...lines.flatMap((l) => [l.a[1], l.b[1]])), 35, 0.5)
 
     // One Ctrl+Z puts the whole drag back.
     await page.keyboard.press('Control+z')
@@ -209,13 +210,13 @@ test.describe('sketch constraints', () => {
     await newProject(page)
     await toolButton(page, 'Rectangle').click()
     await pickTopPlane(page)
-    await clickWorld(page, [10, 10, 0])
-    await clickWorld(page, [50, 30, 0])
+    await clickWorld(page, [-20, 5, 0])
+    await clickWorld(page, [10, 25, 0])
     await expect.poll(async () => (await entitiesOf(page)).length).toBe(4)
     await selectionMode(page, 'Rectangle')
     const original = JSON.stringify(await entitiesOf(page))
-    const [sx, sy] = await clientOf(page, [50, 30, 0])
-    const [ex, ey] = await clientOf(page, [70, 50, 0])
+    const [sx, sy] = await clientOf(page, [10, 25, 0])
+    const [ex, ey] = await clientOf(page, [30, 40, 0])
     await page.mouse.move(sx, sy)
     await page.mouse.down()
     await page.mouse.move(ex, ey, { steps: 6 })

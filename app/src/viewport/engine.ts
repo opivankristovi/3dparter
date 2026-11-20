@@ -85,9 +85,19 @@ interface RegionObj {
 }
 
 const PLANE_SIZE = 80
-/** Widths of the sketch hover and selection marks, in CSS pixels. */
-const SELECT_LINE_WIDTH = 4
-const HOVER_LINE_WIDTH = 3
+/** Widths of the sketch lines and of their hover and selection marks, in CSS pixels. */
+const SKETCH_LINE_WIDTH = 2
+const SELECT_LINE_WIDTH = 5
+const HOVER_LINE_WIDTH = 4
+/** Dot sizes (CSS pixels) on sketch geometry: ends and centres, and line midpoints. */
+const DOT_SIZE = 8
+const MID_DOT_SIZE = 5
+/** Visible height of a new, empty sketch, and the closest a sketch view may get (mm). */
+const EMPTY_SKETCH_SPAN = 120
+const MIN_SKETCH_DISTANCE = 40
+/** Largest share of the view's width and height that existing sketch geometry fills (panels cover the rest). */
+const SKETCH_FILL_W = 0.4
+const SKETCH_FILL_H = 0.5
 const DEFAULT_DIR = new THREE.Vector3(1, -1, 0.8).normalize()
 const DEFAULT_DISTANCE = 250
 
@@ -153,22 +163,35 @@ export class ViewportEngine {
   private regionMats: THREE.MeshBasicMaterial[] = []
   private pickMat = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide })
   private edgeMat = new THREE.LineBasicMaterial()
-  private sketchMat = new THREE.LineBasicMaterial({ depthTest: false, transparent: true })
-  private sketchInactiveMat = new THREE.LineBasicMaterial({ depthTest: false, transparent: true, opacity: 0.55 })
-  private sketchFullMat = new THREE.LineBasicMaterial({ depthTest: false, transparent: true })
-  private sketchConflictMat = new THREE.LineBasicMaterial({ depthTest: false, transparent: true })
-  private sketchConstructionMat = new THREE.LineDashedMaterial({ depthTest: false, transparent: true, dashSize: 2.5, gapSize: 2 })
-  private sketchInactiveConstructionMat = new THREE.LineDashedMaterial({
-    depthTest: false,
-    transparent: true,
-    opacity: 0.55,
-    dashSize: 2.5,
-    gapSize: 2,
-  })
   private cameraListeners = new Set<() => void>()
   private regionLineMat = new THREE.LineBasicMaterial({ depthTest: false, transparent: true, opacity: 0.8 })
   // Wide screen-space lines (WebGL ignores `linewidth` on basic lines). `resolution` is the CSS size of the
-  // canvas, so `linewidth` is in CSS pixels.
+  // canvas, so `linewidth` is in CSS pixels. Sketch lines are 2 px; construction lines are dashed (dash and
+  // gap are in millimetres).
+  private sketchMat = new LineMaterial({ depthTest: false, transparent: true, linewidth: SKETCH_LINE_WIDTH })
+  private sketchInactiveMat = new LineMaterial({ depthTest: false, transparent: true, opacity: 0.55, linewidth: SKETCH_LINE_WIDTH })
+  private sketchFullMat = new LineMaterial({ depthTest: false, transparent: true, linewidth: SKETCH_LINE_WIDTH })
+  private sketchConflictMat = new LineMaterial({ depthTest: false, transparent: true, linewidth: SKETCH_LINE_WIDTH })
+  private sketchConstructionMat = new LineMaterial({
+    depthTest: false,
+    transparent: true,
+    linewidth: SKETCH_LINE_WIDTH,
+    dashed: true,
+    dashSize: 2.5,
+    gapSize: 2,
+  })
+  private sketchInactiveConstructionMat = new LineMaterial({
+    depthTest: false,
+    transparent: true,
+    opacity: 0.55,
+    linewidth: SKETCH_LINE_WIDTH,
+    dashed: true,
+    dashSize: 2.5,
+    gapSize: 2,
+  })
+  /** Round dots on sketch geometry, one material per colour and size. */
+  private dotMats = new Map<string, THREE.PointsMaterial>()
+  private dotTexture: THREE.CanvasTexture | null = null
   private hoverLineMat = new LineMaterial({ depthTest: false, linewidth: HOVER_LINE_WIDTH })
   private selectLineMat = new LineMaterial({ depthTest: false, linewidth: SELECT_LINE_WIDTH })
   private previewMat = new THREE.LineBasicMaterial({ depthTest: false })
@@ -273,10 +296,11 @@ export class ViewportEngine {
       ctx.arc(16, 16, 14, 0, Math.PI * 2)
       ctx.fill()
     }
+    this.dotTexture = new THREE.CanvasTexture(dotCanvas)
     this.snapDotMat = new THREE.PointsMaterial({
       size: 9,
       sizeAttenuation: false,
-      map: new THREE.CanvasTexture(dotCanvas),
+      map: this.dotTexture,
       transparent: true,
       alphaTest: 0.4,
       depthTest: false,
@@ -388,11 +412,24 @@ export class ViewportEngine {
     if (w === 0 || h === 0) return
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
     this.renderer.setSize(w, h, false)
-    this.hoverLineMat.resolution.set(w, h)
-    this.selectLineMat.resolution.set(w, h)
+    for (const m of this.wideMats()) m.resolution.set(w, h)
     this.camera.aspect = w / h
     this.camera.updateProjectionMatrix()
     this.requestRender()
+  }
+
+  /** Every screen-space-width line material (they all need the canvas size). */
+  private wideMats(): LineMaterial[] {
+    return [
+      this.sketchMat,
+      this.sketchInactiveMat,
+      this.sketchFullMat,
+      this.sketchConflictMat,
+      this.sketchConstructionMat,
+      this.sketchInactiveConstructionMat,
+      this.hoverLineMat,
+      this.selectLineMat,
+    ]
   }
 
   // ---- colours --------------------------------------------------------------------------------
@@ -440,6 +477,7 @@ export class ViewportEngine {
     this.sketchConstructionMat.color.copy(p['sketch-construction'])
     this.sketchInactiveConstructionMat.color.copy(p['sketch-construction'])
     this.regionLineMat.color.copy(p['sketch-under'])
+    for (const [key, m] of this.dotMats) m.color.copy(this.dotColor(key))
     this.hoverLineMat.color.copy(p.preselect)
     this.selectLineMat.color.copy(p.selection)
     this.previewMat.color.copy(p['sketch-under'])
@@ -451,6 +489,29 @@ export class ViewportEngine {
     this.axisMats[2].color.copy(p['axis-z'])
     this.snapDotMat.color.copy(p.accent)
     this.drawLabels()
+  }
+
+  private dotColor(key: string): THREE.Color {
+    const kind = key.split(':')[0] as 'under' | 'full' | 'conflict' | 'construction'
+    return this.palette[`sketch-${kind}`]
+  }
+
+  private dotMat(kind: 'under' | 'full' | 'conflict' | 'construction', size: number): THREE.PointsMaterial {
+    const key = `${kind}:${size}`
+    let m = this.dotMats.get(key)
+    if (!m) {
+      m = new THREE.PointsMaterial({
+        size,
+        sizeAttenuation: false,
+        map: this.dotTexture,
+        transparent: true,
+        alphaTest: 0.4,
+        depthTest: false,
+      })
+      m.color.copy(this.dotColor(key))
+      this.dotMats.set(key, m)
+    }
+    return m
   }
 
   // ---- static scene ---------------------------------------------------------------------------
@@ -740,6 +801,12 @@ export class ViewportEngine {
     for (const g of groups) {
       const solid = new Map<THREE.Material, number[]>()
       const dashed: number[] = []
+      const dots = new Map<THREE.PointsMaterial, number[]>()
+      const dotsInto = (mat: THREE.PointsMaterial, p: Vec3) => {
+        const list = dots.get(mat)
+        if (list) list.push(...p)
+        else dots.set(mat, [...p])
+      }
       const into = (mat: THREE.Material, seg: number[]) => {
         const list = solid.get(mat)
         if (list) list.push(...seg)
@@ -747,22 +814,48 @@ export class ViewportEngine {
       }
       for (const e of g.entities) {
         const seg = entitySegments(e, g.frame)
-        if (e.construction) dashed.push(...seg)
-        else if (!g.active) into(this.sketchInactiveMat, seg)
+        let kind: 'under' | 'full' | 'conflict' | 'construction' = 'under'
+        if (e.construction) {
+          dashed.push(...seg)
+          kind = 'construction'
+        } else if (!g.active) into(this.sketchInactiveMat, seg)
         else {
           const st = g.states?.[e.id]
           into(st === 'full' ? this.sketchFullMat : st === 'conflict' ? this.sketchConflictMat : this.sketchMat, seg)
+          kind = st === 'full' ? 'full' : st === 'conflict' ? 'conflict' : 'under'
+        }
+        if (!g.active) continue
+        const big = this.dotMat(kind, DOT_SIZE)
+        const at = (l: Vec2): Vec3 => localToWorld(l, g.frame)
+        if (e.type === 'line') {
+          dotsInto(big, at(e.a))
+          dotsInto(big, at(e.b))
+          if (!e.construction) dotsInto(this.dotMat(kind, MID_DOT_SIZE), at([(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2]))
+        } else {
+          dotsInto(big, at(e.center))
+          if (e.type === 'arc') {
+            dotsInto(big, at([e.center[0] + e.radius * Math.cos(e.startAngle), e.center[1] + e.radius * Math.sin(e.startAngle)]))
+            dotsInto(big, at([e.center[0] + e.radius * Math.cos(e.endAngle), e.center[1] + e.radius * Math.sin(e.endAngle)]))
+          }
         }
       }
-      const add = (geo: THREE.BufferGeometry, mat: THREE.Material, dash: boolean) => {
-        const lines = new THREE.LineSegments(geo, mat)
+      const add = (seg: number[], mat: LineMaterial, dash: boolean) => {
+        const geo = new LineSegmentsGeometry()
+        geo.setPositions(seg)
+        const lines = new LineSegments2(geo, mat)
         if (dash) lines.computeLineDistances()
         lines.renderOrder = 5
         lines.frustumCulled = false
         this.sketchGroup.add(lines)
       }
-      for (const [mat, seg] of solid) add(lineGeometry(seg), mat, false)
-      if (dashed.length) add(lineGeometry(dashed), g.active ? this.sketchConstructionMat : this.sketchInactiveConstructionMat, true)
+      for (const [mat, seg] of solid) add(seg, mat as LineMaterial, false)
+      if (dashed.length) add(dashed, g.active ? this.sketchConstructionMat : this.sketchInactiveConstructionMat, true)
+      for (const [mat, pos] of dots) {
+        const pts = new THREE.Points(lineGeometry(pos), mat)
+        pts.renderOrder = 6
+        pts.frustumCulled = false
+        this.sketchGroup.add(pts)
+      }
     }
     this.requestRender()
   }
@@ -874,8 +967,11 @@ export class ViewportEngine {
   /** Camera pose from before the current sketch opened, restored by leavePlaneView(). */
   private preSketchView: { target: THREE.Vector3; dir: THREE.Vector3; dist: number } | null = null
 
-  /** Look straight at a sketch plane, from the side its normal points to. */
-  lookAtPlane(frame: PlaneFrame) {
+  /**
+   * Look straight at a sketch plane, from the side its normal points to. With existing geometry the view
+   * frames it (with margin); an empty sketch gets a view about EMPTY_SKETCH_SPAN mm tall.
+   */
+  lookAtPlane(frame: PlaneFrame, geometry: SketchEntity[] = []) {
     if (!this.preSketchView) {
       const target = this.controls.target.clone()
       const offset = this.camera.position.clone().sub(target)
@@ -884,8 +980,40 @@ export class ViewportEngine {
     const n = new THREE.Vector3(...frame.normal)
     // A tiny tilt so "up" stays defined when looking along the world Z axis.
     const tilt = Math.abs(n.z) > 0.99 ? new THREE.Vector3(0, -0.001, 0) : new THREE.Vector3(0, 0, 0)
-    const dist = Math.min(Math.max(this.camera.position.distanceTo(this.controls.target), 60), 400)
-    this.flyTo(new THREE.Vector3(0, 0, 0), n.clone().add(tilt), dist)
+
+    const tanV = Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2)
+    const tanH = tanV * this.camera.aspect
+    const pts: Vec3[] = []
+    for (const e of geometry) {
+      const seg = entitySegments(e, frame)
+      for (let i = 0; i + 2 < seg.length; i += 3) pts.push([seg[i], seg[i + 1], seg[i + 2]])
+    }
+    if (pts.length === 0) {
+      this.flyTo(new THREE.Vector3(0, 0, 0), n.clone().add(tilt), EMPTY_SKETCH_SPAN / 2 / tanV)
+      return
+    }
+    const lo: Vec2 = [Infinity, Infinity]
+    const hi: Vec2 = [-Infinity, -Infinity]
+    for (const p of pts) {
+      const l = worldToLocal(p, frame)
+      lo[0] = Math.min(lo[0], l[0])
+      lo[1] = Math.min(lo[1], l[1])
+      hi[0] = Math.max(hi[0], l[0])
+      hi[1] = Math.max(hi[1], l[1])
+    }
+    const w = hi[0] - lo[0]
+    const h = hi[1] - lo[1]
+    const c = localToWorld([(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2], frame)
+    const dist = Math.max(MIN_SKETCH_DISTANCE, Math.max(h / 2 / tanV / SKETCH_FILL_H, w / 2 / tanH / SKETCH_FILL_W))
+    this.flyTo(new THREE.Vector3(...c), n.clone().add(tilt), dist)
+  }
+
+  /** Fly to look along `dir` (the direction from the target to the camera), keeping target and distance. */
+  viewFrom(dir: Vec3) {
+    const d = new THREE.Vector3(...dir).normalize()
+    // Top and Bottom: a tiny tilt keeps "up" defined (screen up is +Y from the top, -Y from below).
+    if (Math.abs(d.z) > 0.99) d.add(new THREE.Vector3(0, -0.001, 0))
+    this.flyTo(this.controls.target.clone(), d, this.camera.position.distanceTo(this.controls.target))
   }
 
   /** Back to the 3D view the user had before the sketch opened. No-op if no sketch view is active. */
@@ -980,8 +1108,9 @@ export class ViewportEngine {
     })
     this.planeMeshes.get('XY')?.geometry.dispose()
     this.snapDot.geometry.dispose()
-    this.snapDotMat.map?.dispose()
+    this.dotTexture?.dispose()
     this.snapDotMat.dispose()
+    for (const m of this.dotMats.values()) m.dispose()
     for (const m of [
       ...this.bodyMats,
       ...this.planeMats,
