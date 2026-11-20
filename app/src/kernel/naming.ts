@@ -67,11 +67,13 @@ export interface CarryInput {
   shell?: boolean
   /** Prefix for the names carried over from each source (same order as `sources`); default none. */
   prefixes?: string[]
+  /** Applied to every name carried over from a source (not for shell). Used to turn an opened face into a rim. */
+  rename?: (name: string) => string
 }
 
 /** Faces and edges names of `result`, carried over from `sources` through the algorithm's history. */
 export function carryNames(input: CarryInput): { faceNames: Map<number, string>; edgeNames: Map<number, string> } {
-  const { featureId, algo, sources, result, blend, shell, prefixes } = input
+  const { featureId, algo, sources, result, blend, shell, prefixes, rename } = input
   const resultFaces = result.faces
   const inResult = new Set(resultFaces.map((f) => f.hashCode))
   for (const f of resultFaces) f.delete()
@@ -85,7 +87,7 @@ export function carryNames(input: CarryInput): { faceNames: Map<number, string>;
     const prefix = prefixes?.[si] ?? ''
     for (const face of src.shape.faces) {
       const base = src.faceNames.get(face.hashCode)
-      const old = base === undefined ? undefined : prefix + base
+      const old = base === undefined ? undefined : rename ? rename(prefix + base) : prefix + base
       if (old !== undefined && shell) {
         const stays = inResult.has(face.hashCode)
         if (stays) give(face.hashCode, old)

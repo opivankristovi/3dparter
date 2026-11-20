@@ -164,6 +164,32 @@ describe('2. shell', () => {
     k.dispose()
   })
 
+  // BUG-011: the opened face is tangent-adjacent to the fillet's blend face.
+  describe.each([
+    { r: 3, t: 1 },
+    { r: 1, t: 2 },
+  ])('shell opened at a filleted edge (fillet $r, thickness $t)', ({ r, t }) => {
+    it('hollows the part, names the inner faces and opens the top', () => {
+      const k = new Regenerator()
+      const filleted = 8000 - BLEND_VOL(r, 40)
+      const res = k.regenerate(docOf(...box(), filletFeature('f', ['e/cap:end|e/side/l1'], String(r)), shellFeature('sh', 'e', ['e/cap:end'], String(t))), 2)
+      expect(allOk(res)).toBe(true)
+      const v = vol(k)
+      expect(v).toBeGreaterThan(0)
+      expect(v).toBeLessThan(filleted)
+      const wall = Math.max(r, t)
+      const cavity = (40 - 2 * t) * (20 - 2 * t) * (10 - 2 * t) - (r > t ? BLEND_VOL(r - t, 40 - 2 * t) : 0) + (40 - 2 * t) * (20 - t - wall) * t
+      const expected = 8000 - BLEND_VOL(r, 40) - cavity
+      expect(Math.abs(v - expected) / expected).toBeLessThan(1e-2)
+      const names = faceNames(k)
+      expect(names).not.toContain('e/cap:end')
+      expect(names).toContain('sh/inner/e/cap:start')
+      expect(names.some((n) => n.startsWith('sh/inner/'))).toBe(true)
+      expect(new Set(names).size).toBe(names.length)
+      k.dispose()
+    })
+  })
+
   it('no removed faces gives a closed hollow solid', () => {
     const k = new Regenerator()
     const r = k.regenerate(doc(40, '2', []), 1)
