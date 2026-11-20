@@ -135,8 +135,11 @@ describe('errors', () => {
   it('reports bad distances and a missing join target', () => {
     const k = new Regenerator()
     const s = sketchFeature('s', 'XY', rect('l', 0, 0, 10, 10))
-    let r = k.regenerate(docOf(s, extrudeFeature('e', [BOX_REGION], 'abc')), 1)
+    let r = k.regenerate(docOf(s, extrudeFeature('e', [BOX_REGION], '-3')), 1)
     expect(r.statuses[1]).toMatchObject({ ok: false, message: 'Enter a distance greater than 0.' })
+    // Text that is not a number is now an expression: an unknown name, reported with its field.
+    r = k.regenerate(docOf(s, extrudeFeature('e', [BOX_REGION], 'abc')), 1)
+    expect(r.statuses[1]).toMatchObject({ ok: false, message: 'Distance: There is no variable called abc.' })
     r = k.regenerate(docOf(s, extrudeFeature('e', [BOX_REGION], '0')), 1)
     expect(r.statuses[1].ok).toBe(false)
     r = k.regenerate(docOf(s, extrudeFeature('e', [BOX_REGION], '5', 1, 'union')), 1)

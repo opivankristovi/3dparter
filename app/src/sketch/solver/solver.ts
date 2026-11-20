@@ -5,6 +5,7 @@ import { GcsWrapper, SolveStatus, init_planegcs_module } from '@salusoft89/plane
 import type { ArcEntity, CircleEntity, LineEntity, Sketch, SketchEntity, Vec2 } from '../../doc/types'
 import { buildSystem, pointId } from './toPrimitives'
 import type { BuildOptions, BuiltSystem, DragSpec } from './toPrimitives'
+import type { Scope } from './value'
 
 export type SolveState = 'under' | 'full' | 'over'
 
@@ -24,6 +25,8 @@ export interface SolveResult {
 
 export interface SolveOptions {
   drag?: DragSpec
+  /** Variable values for dimension expressions (default: none). */
+  scope?: Scope
 }
 
 export interface InitOptions {
@@ -160,7 +163,7 @@ function entityChecksum(e: SketchEntity): number {
  * is pulled with temporary constraints, so an over-defined drag gives a best-effort result.
  */
 export function solveSketch(sketch: Sketch, opts: SolveOptions = {}): SolveResult {
-  const r = run(sketch, { drag: opts.drag }, true)
+  const r = run(sketch, { drag: opts.drag, scope: opts.scope }, true)
   const solved = r.status === SolveStatus.Success || r.status === SolveStatus.Converged
   const over = r.conflicting.length > 0 || r.redundant.length > 0
   return {
@@ -175,7 +178,7 @@ export function solveSketch(sketch: Sketch, opts: SolveOptions = {}): SolveResul
 }
 
 /** Degrees of freedom of the sketch with the given entities fully pinned (no geometry is read back). */
-export function dofWithFixed(sketch: Sketch, fixed: ReadonlySet<string>): { dof: number; conflicting: string[] } {
-  const r = run(sketch, { fixedEntities: fixed }, false)
+export function dofWithFixed(sketch: Sketch, fixed: ReadonlySet<string>, scope?: Scope): { dof: number; conflicting: string[] } {
+  const r = run(sketch, { fixedEntities: fixed, scope }, false)
   return { dof: r.dof, conflicting: r.conflicting }
 }

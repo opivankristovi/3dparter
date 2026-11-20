@@ -29,6 +29,8 @@ import {
   type TransformFeature,
   type Vec3,
 } from '../doc/types'
+import { evalField, evaluateVariables, exprFields } from '../doc/variables'
+import type { Evaluated } from '../doc/variables'
 import type { FeatureStatus, RegenResult } from './api'
 import { buildExtrusion, safeDelete, Scope, type BuiltBody } from './build'
 import type { Face } from 'replicad'
@@ -177,6 +179,34 @@ function featureKey(f: Feature, depKeys: string[], bodyKeys: string[]): string {
   return hash(canonical({ ...f, name: undefined, suppressed: undefined }) + '|' + depKeys.join(',') + '|' + bodyKeys.join(','))
 }
 
+// ---- expressions --------------------------------------------------------------------------------------
+
+/**
+ * Evaluates the Expr fields of a feature against the document's variables. Returns a COPY of the feature in
+ * which every Expr field holds the evaluated number as text (so the cache key sees numbers, not text: "5 * 2"
+ * and "10" are the same key), plus the first field error ("Distance: There is no variable called widht.").
+ * A field with an error holds its message instead, so the key changes when the error does. Sketches have no
+ * Expr fields here: their dimension values are solved into entity coordinates when edited.
+ */
+function resolveFeature(f: Feature, ev: Evaluated): { feature: Feature; error?: string } {
+  if (f.type === 'sketch') return { feature: f }
+  const copy = structuredClone(f)
+  let error: string | undefined
+  for (const field of exprFields(copy)) {
+    const text = String(field.value ?? '')
+    if (field.emptyIsZero && text.trim() === '') continue
+    const r = evalField(text, ev)
+    if (r.ok) {
+      field.set(String(r.value))
+    } else {
+      const message = `${field.label}: ${r.message}`
+      error ??= message
+      field.set(`#error ${message}`)
+    }
+  }
+  return { feature: copy, ...(error ? { error } : {}) }
+}
+
 // ---- errors ------------------------------------------------------------------------------------
 
 function plainError(err: unknown): string {
@@ -200,16 +230,18 @@ export class Regenerator {
     const statuses: FeatureStatus[] = []
     const next = new Map<string, FeatureRecord>()
     const state = new Map<string, BodyRecord>()
+    const ev = evaluateVariables(doc.variables ?? [])
     try {
       const last = doc.rollbackIndex === null ? doc.features.length - 1 : Math.min(doc.rollbackIndex, doc.features.length - 1)
       for (let i = 0; i <= last; i++) {
-        const f = doc.features[i]
-        if (f.suppressed) continue
+        const source = doc.features[i]
+        if (source.suppressed) continue
+        const { feature: f, error } = resolveFeature(source, ev)
         const depKeys = dependencies(f).map((d) => next.get(d)?.key ?? 'missing')
         const bodyKeys = readsBodies(f) ? [...state].map(([n, b]) => `${n}:${b.key}`) : []
         const key = featureKey(f, depKeys, bodyKeys)
         const cached = this.records.get(f.id)
-        const rec = cached && cached.key === key ? cached : this.evaluate(f, key, { done: next, bodies: state })
+        const rec = cached && cached.key === key ? cached : this.evaluate(f, key, { done: next, bodies: state }, error)
         next.set(f.id, rec)
         statuses.push(rec.status)
         if (rec.status.ok) {
@@ -302,7 +334,7 @@ export class Regenerator {
 
   // ---- one feature: dispatch -------------------------------------------------------------------
 
-  private evaluate(f: Feature, key: string, ctx: Ctx): FeatureRecord {
+  private evaluate(f: Feature, key: string, ctx: Ctx, error?: string): FeatureRecord {
     const fail = (message: string): FeatureRecord => ({
       key,
       status: { featureId: f.id, ok: false, message },
@@ -310,6 +342,7 @@ export class Regenerator {
       removed: [],
     })
     try {
+      if (error) return fail(error)
       for (const dep of dependencies(f)) {
         const d = ctx.done.get(dep)
         if (d && !d.status.ok) return fail(ERR_EARLIER)

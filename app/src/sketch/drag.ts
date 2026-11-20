@@ -1,6 +1,8 @@
 // Dragging sketch geometry with a live solve. Every frame is solved and drawn through the engine from a
 // copy; the document is written once, on release, as a single undo step.
+import { useProjectStore } from '../doc/store'
 import type { Sketch, SketchEntity, Vec2 } from '../doc/types'
+import { scopeOf } from '../doc/variables'
 import { moveSketchGeometry } from './commands'
 import { useSketchUi } from './sketchUi'
 import { solveSketch } from './solver/solver'
@@ -27,7 +29,7 @@ export function beginDrag(sketchId: string, base: Sketch, ref: string, grab: Vec
 
 /** Solves with the pointer at `to` and shows the result. Unconstrained or fully pinned geometry stays put. */
 export function updateDrag(s: DragSession, to: Vec2) {
-  const r = solveSketch(s.base, { drag: { ref: s.ref, to, grab: s.grab } })
+  const r = solveSketch(s.base, { drag: { ref: s.ref, to, grab: s.grab }, scope: scopeOf(useProjectStore.getState().doc) })
   s.started = true
   dragState.active = true
   useSketchUi.getState().set({ preview: r.entities })

@@ -3,6 +3,7 @@
 import { X } from 'lucide-react'
 import { useProjectStore } from '../doc/store'
 import type { Sketch, SketchConstraint, SketchFeature } from '../doc/types'
+import { scopeOf } from '../doc/variables'
 import { useToolStore } from '../screens/workspace/toolStore'
 import { IconButton } from '../ui/IconButton'
 import { cn } from '../ui/cn'
@@ -33,7 +34,7 @@ function describeRef(ref: string, sketch: Sketch): string {
 function summary(c: SketchConstraint, sketch: Sketch, units: Parameters<typeof labelText>[2]): string {
   const what = c.entityIds.map((r) => describeRef(r, sketch)).join(', ')
   if (!isDimensional(c.type)) return what
-  const v = c.driving ? evalValue(c.value) : (measureConstraint(sketch, c) ?? NaN)
+  const v = c.driving ? evalValue(c.value, scopeOf(useProjectStore.getState().doc)) : (measureConstraint(sketch, c) ?? NaN)
   const text = Number.isFinite(v) ? labelText(c.type, v, units) : ''
   return `${c.driving ? text : `(${text})`} · ${what}`
 }

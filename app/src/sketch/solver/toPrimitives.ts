@@ -12,6 +12,7 @@ import { isDimensional } from './constraints'
 import { getPoint, parseRef, pointSlots } from './refs'
 import type { PointSlot } from './refs'
 import { evalValue } from './value'
+import type { Scope } from './value'
 
 const DEG = Math.PI / 180
 
@@ -27,6 +28,8 @@ export interface BuildOptions {
   drag?: DragSpec
   /** Entities whose independent parameters are all fixed (used to test whether they are fully defined). */
   fixedEntities?: ReadonlySet<string>
+  /** Variable values for dimension expressions (default: none). */
+  scope?: Scope
 }
 
 /** A planegcs parameter pinned after the primitives are pushed (arc angles, radii). */
@@ -99,6 +102,7 @@ function mapConstraint(
   resolve: (ref: string) => Res | null,
   entities: Map<string, SketchEntity>,
   sketch: Sketch,
+  scope?: Scope,
 ): Maker[] | string {
   const refs = c.entityIds.map(resolve)
   if (refs.some((r) => r === null)) return 'Refers to something that no longer exists'
@@ -106,7 +110,7 @@ function mapConstraint(
   const n = r.length
   let value = 0
   if (isDimensional(c.type)) {
-    value = evalValue(c.value)
+    value = evalValue(c.value, scope)
     if (!Number.isFinite(value)) return 'The value is not a number'
   }
   const bad = (): string => `Wrong selection for ${c.type}`
@@ -354,7 +358,7 @@ export function buildSystem(sketch: Sketch, opts: BuildOptions = {}): BuiltSyste
   // Constraints
   for (const c of sketch.constraints) {
     if (!c.driving || c.type === 'fix') continue
-    const made = mapConstraint(c, resolve, entities, sketch)
+    const made = mapConstraint(c, resolve, entities, sketch, opts.scope)
     if (typeof made === 'string') {
       invalid.set(c.id, made)
       continue

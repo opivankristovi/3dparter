@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useProjectStore } from '../doc/store'
 import type { PlaneFrame, Sketch, SketchConstraint, SketchEntity, Vec2 } from '../doc/types'
+import { scopeOf } from '../doc/variables'
 import { isTypingTarget } from '../screens/workspace/hooks'
 import { ConstraintGlyph } from '../ui/ConstraintGlyph'
 import type { ConstraintKind } from '../ui/ConstraintGlyph'
@@ -224,7 +225,7 @@ export function SketchOverlay({ engine, frame, sketchId, entities, constraints }
     if (!isDimensional(c.type)) return []
     const layout = layoutDimension(c, ents, toScreen, centre)
     if (!layout) return []
-    const value = c.driving ? evalValue(c.value) : (measureConstraint(sketch, c) ?? NaN)
+    const value = c.driving ? evalValue(c.value, scopeOf(useProjectStore.getState().doc)) : (measureConstraint(sketch, c) ?? NaN)
     if (!Number.isFinite(value)) return []
     return [{ c, layout, text: `${DIM_PREFIX[c.type] ?? ''}${labelText(c.type, value, units)}`, value }]
   })

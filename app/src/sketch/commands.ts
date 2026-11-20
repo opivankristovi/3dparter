@@ -1,6 +1,7 @@
 // Sketch edits. Each call is exactly one undo step.
 import { addFeature, newId, nextFeatureName } from '../doc/commands'
 import { useProjectStore } from '../doc/store'
+import { scopeOf } from '../doc/variables'
 import type { Expr, OriginPlaneName, Ref, Sketch, SketchConstraint, SketchEntity, SketchFeature } from '../doc/types'
 import { mustBePositive, isDimensional } from './solver/constraints'
 import { measureConstraint } from './solver/measure'
@@ -29,6 +30,9 @@ export type ConstraintResult = { ok: true } | { ok: false; conflicting: string[]
 
 type Refusal = Extract<ConstraintResult, { ok: false }>
 
+/** Variable values of the open document, for dimension expressions. */
+const currentScope = () => scopeOf(useProjectStore.getState().doc)
+
 function sketchOf(sketchId: string): Sketch | null {
   const f = useProjectStore.getState().doc.features.find((x) => x.id === sketchId)
   return f?.type === 'sketch' ? f.sketch : null
@@ -47,14 +51,14 @@ const size = (e: SketchEntity) => (e.type === 'line' ? Math.hypot(e.b[0] - e.a[0
 const DEGENERATE = 1e-6
 
 /** Entities that were real before and have collapsed to a point after. */
-function collapsed(before: SketchEntity[], after: SketchEntity[]): string[] {
+export function collapsed(before: SketchEntity[], after: SketchEntity[]): string[] {
   const was = new Map(before.map((e) => [e.id, size(e)]))
   return after.filter((e) => size(e) < DEGENERATE && (was.get(e.id) ?? 0) >= DEGENERATE).map((e) => e.id)
 }
 
 /** Solves `trial` and decides whether it may replace `before`. */
 function vet(before: Sketch, trial: Sketch, newConstraintId: string): { ok: true; entities: SketchEntity[] } | Refusal {
-  const r: SolveResult = solveSketch(trial)
+  const r: SolveResult = solveSketch(trial, { scope: currentScope() })
   const why = r.invalid[newConstraintId]
   if (why) return { ok: false, conflicting: [], reason: why }
   if (r.conflicting.length > 0) {
@@ -98,7 +102,7 @@ export function addSketchEntities(
       if (vet(merged, trial, c.id).ok) merged.constraints.push(c)
     }
     accepted = merged.constraints.slice(sketch.constraints.length)
-    const r = solveSketch(merged)
+    const r = solveSketch(merged, { scope: currentScope() })
     if (r.ok) solved = r.entities.slice(sketch.entities.length)
     // Existing entities may have been nudged by a new coincident constraint: keep that too.
     const moved = r.ok ? r.entities.slice(0, sketch.entities.length) : sketch.entities
@@ -141,7 +145,7 @@ export function addConstraint(sketchId: string, c: SketchConstraint): Constraint
   const sketch = sketchOf(sketchId)
   if (!sketch) return { ok: false, conflicting: [], reason: 'No such sketch.' }
   if (isDimensional(c.type)) {
-    const v = evalValue(c.value)
+    const v = evalValue(c.value, currentScope())
     if (!Number.isFinite(v)) return { ok: false, conflicting: [], reason: 'The value is not a number.' }
     if (mustBePositive(c.type) && v <= 0) return { ok: false, conflicting: [], reason: 'The value must be greater than zero.' }
   }
@@ -175,7 +179,7 @@ export function setConstraintValue(sketchId: string, constraintId: string, value
   const old = sketch?.constraints.find((x) => x.id === constraintId)
   if (!sketch || !old) return { ok: false, conflicting: [], reason: 'No such constraint.' }
   if (!isDimensional(old.type)) return { ok: false, conflicting: [], reason: 'This constraint has no value.' }
-  const v = evalValue(value)
+  const v = evalValue(value, currentScope())
   if (!Number.isFinite(v)) return { ok: false, conflicting: [], reason: 'The value is not a number.' }
   if (mustBePositive(old.type) && v <= 0) return { ok: false, conflicting: [], reason: 'The value must be greater than zero.' }
   const next: SketchConstraint = { ...old, value }

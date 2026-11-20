@@ -1,6 +1,8 @@
 // Solver start-up and the defined-state of the open sketch.
 import { useEffect } from 'react'
+import { useProjectStore } from '../doc/store'
 import type { SketchFeature } from '../doc/types'
+import { scopeOf } from '../doc/variables'
 import { entityStates } from './solver/defined'
 import { initSolver, isSolverReady, solveSketch } from './solver/solver'
 import { useSketchUi } from './sketchUi'
@@ -41,11 +43,12 @@ export function useDefinedInfo(sketch: SketchFeature | undefined) {
       return
     }
     try {
-      const base = solveSketch(data)
+      const scope = scopeOf(useProjectStore.getState().doc)
+      const base = solveSketch(data, { scope })
       ui.set({
         defined: {
           sketchId,
-          states: entityStates(data),
+          states: entityStates(data, scope),
           dof: base.dof,
           state: base.state,
           conflicting: [...base.conflicting, ...base.redundant],

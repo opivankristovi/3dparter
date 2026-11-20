@@ -2,6 +2,7 @@
 import type { Sketch } from '../../doc/types'
 import { refEntityId } from './refs'
 import { dofWithFixed, solveSketch } from './solver'
+import type { Scope } from './value'
 
 export type EntityState = 'under' | 'full' | 'conflict'
 
@@ -10,8 +11,8 @@ export type EntityState = 'under' | 'full' | 'conflict'
  * parameters pinned. If the dof did not drop, the constraints already determined it: 'full'.
  * Entities touched by a conflicting constraint are 'conflict'.
  */
-export function entityStates(sketch: Sketch): Record<string, EntityState> {
-  const base = solveSketch(sketch)
+export function entityStates(sketch: Sketch, scope?: Scope): Record<string, EntityState> {
+  const base = solveSketch(sketch, { scope })
   const conflicted = new Set<string>()
   for (const cid of base.conflicting) {
     const c = sketch.constraints.find((x) => x.id === cid)
@@ -24,7 +25,7 @@ export function entityStates(sketch: Sketch): Record<string, EntityState> {
   for (const e of sketch.entities) {
     if (conflicted.has(e.id)) out[e.id] = 'conflict'
     else if (base.dof === 0) out[e.id] = 'full'
-    else out[e.id] = dofWithFixed(sketch, new Set([e.id])).dof === base.dof ? 'full' : 'under'
+    else out[e.id] = dofWithFixed(sketch, new Set([e.id]), scope).dof === base.dof ? 'full' : 'under'
   }
   return out
 }
