@@ -12,9 +12,15 @@ function outFile(info: TestInfo, name: string): string {
   return resolve(dir, name)
 }
 
+// SCREENS_THEME=dark captures the dark theme into files named S03-dark.png etc., for diffing against an
+// original that runs dark. The default captures stay light and keep their names.
+const DARK = process.env.SCREENS_THEME === 'dark'
+if (DARK) test.use({ colorScheme: 'dark' })
+
 async function capture(page: Page, info: TestInfo, name: string) {
   await page.waitForTimeout(400) // tooltips and transitions
-  await page.screenshot({ path: outFile(info, name), fullPage: true })
+  const file = DARK ? name.replace(/\.png$/, '-dark.png') : name
+  await page.screenshot({ path: outFile(info, file), fullPage: true })
 }
 
 test.describe('clone screens', () => {
