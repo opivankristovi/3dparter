@@ -1,6 +1,6 @@
 // Document commands. Each one is exactly one undo step (one call to store.apply).
 import { useProjectStore } from './store'
-import type { ExtrudeFeature, Feature, ProjectDocument, SketchFeature } from './types'
+import type { Feature, ProjectDocument } from './types'
 
 export function newId(): string {
   return crypto.randomUUID()
@@ -37,8 +37,25 @@ function nextBodyName(doc: ProjectDocument): string {
   }
 }
 
-/** A feature that starts a new solid owns a bodies entry keyed by its id. */
+/** A feature that starts a new solid owns a bodies entry keyed by its id (or `<id>:<n>` for transform copies). */
 function syncBodyEntry(draft: ProjectDocument, f: Feature) {
+  if (f.type === 'transform') {
+    const wanted = new Set<string>()
+    if (f.params.copy) {
+      for (let i = 0; i < f.params.bodies.length; i++) {
+        const key = `${f.id}:${i + 1}`
+        wanted.add(key)
+        if (!draft.bodies[key]) {
+          draft.bodies[key] = { name: nextBodyName(draft), color: null, opacity: 1, visible: true, itemFolderId: null }
+        }
+      }
+    }
+    const prefix = `${f.id}:`
+    for (const key of Object.keys(draft.bodies)) {
+      if (key.startsWith(prefix) && !wanted.has(key)) delete draft.bodies[key]
+    }
+    return
+  }
   const makesBody = (f.type === 'extrude' || f.type === 'revolve') && f.params.mode === 'new'
   if (makesBody && !draft.bodies[f.id]) {
     draft.bodies[f.id] = { name: nextBodyName(draft), color: null, opacity: 1, visible: true, itemFolderId: null }
@@ -54,7 +71,8 @@ export function addFeature(feature: Feature, label = `Add ${feature.name}`) {
   })
 }
 
-type ParamsPatch = Partial<SketchFeature['params']> & Partial<ExtrudeFeature['params']>
+/** Any of a feature's parameters; the caller knows which feature it edits. */
+type ParamsPatch = Record<string, unknown>
 
 export function updateFeatureParams(id: string, partial: ParamsPatch, label = 'Edit feature') {
   useProjectStore.getState().apply(label, (draft) => {
@@ -71,6 +89,10 @@ export function deleteFeature(id: string) {
     if (idx < 0) return
     draft.features.splice(idx, 1)
     delete draft.bodies[id]
+    const prefix = `${id}:`
+    for (const key of Object.keys(draft.bodies)) {
+      if (key.startsWith(prefix)) delete draft.bodies[key]
+    }
     if (draft.rollbackIndex !== null) draft.rollbackIndex = Math.min(draft.rollbackIndex, draft.features.length)
   })
 }

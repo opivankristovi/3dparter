@@ -291,7 +291,7 @@ function Shell({
           </nav>
         </>
       ) : drawerOpen ? (
-        <aside aria-label="Project panels" className={cn('absolute right-2 z-20 flex', BELOW_TOPBAR, tablet ? 'bottom-2' : 'bottom-16')}>
+        <aside aria-label="Project panels" className={cn('absolute right-2 z-20 flex', BELOW_TOPBAR, tablet ? 'bottom-2' : 'bottom-30')}>
           {sidebar}
         </aside>
       ) : null}
@@ -305,7 +305,7 @@ function Shell({
               ? 'bottom-2 left-[calc(var(--layout-toolrail-labelled-w)+1rem)] items-end'
               : tablet
                 ? cn(BELOW_TOPBAR, 'right-2')
-                : 'inset-x-2 bottom-16 justify-center',
+                : 'inset-x-2 bottom-30 justify-center',
           )}
         >
           <div className="pointer-events-auto max-w-full">{overlay}</div>
@@ -318,7 +318,7 @@ function Shell({
           className={cn(
             'absolute left-1/2 z-10 flex -translate-x-1/2 flex-col items-center gap-2',
             // On desktop an open tool card has its Cancel / Apply bar at the bottom centre: sit above it.
-            desktop && overlay ? 'bottom-20' : tablet ? 'bottom-4' : 'bottom-16',
+            desktop && overlay ? 'bottom-20' : tablet ? 'bottom-4' : 'bottom-30',
           )}
         >
           {problem ? (

@@ -1,4 +1,4 @@
-// The working screen: owns the kernel connection, the 3D viewport and the sketch / extrude tools,
+// The working screen: owns the kernel connection, the 3D viewport and the sketch / modeling tools,
 // and hands them to the layout-only <Workspace>.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -7,8 +7,16 @@ import { saveThumbnail } from '../../data/projects'
 import { useProjectStore } from '../../doc/store'
 import type { OriginPlaneName, Ref } from '../../doc/types'
 import { ORIGIN_PLANE_LABELS } from '../../doc/types'
-import { cancelExtrude, useExtrudeTool } from '../../extrude/ExtrudeTool'
+import { useExtrudeTool } from '../../extrude/ExtrudeTool'
 import { getKernel } from '../../kernel/client'
+import { useCombineTool } from '../../modeling/CombineTool'
+import { cancelDraft } from '../../modeling/draft'
+import { useEdgeBlendTool } from '../../modeling/EdgeBlendTool'
+import { handlePick } from '../../modeling/picking'
+import { usePlaneTool } from '../../modeling/PlaneTool'
+import { useRevolveTool } from '../../modeling/RevolveTool'
+import { useShellTool } from '../../modeling/ShellTool'
+import { useTransformTool } from '../../modeling/TransformTool'
 import { SketchLayer } from '../../sketch/SketchLayer'
 import { SketchStatus } from '../../sketch/SketchStatus'
 import { useSketchUi } from '../../sketch/sketchUi'
@@ -17,8 +25,10 @@ import { endSketch, finishSketch, startSketchOn } from '../../sketch/session'
 import { Button } from '../../ui/Button'
 import { IconButton } from '../../ui/IconButton'
 import { ProgressIndicator } from '../../ui/ProgressIndicator'
+import { useToast } from '../../ui/Toast'
 import { installTestHook } from '../../testing/hook'
 import { ViewportEngine } from '../../viewport/engine'
+import type { PickMode } from '../../viewport/engine'
 import { Viewport } from '../../viewport/Viewport'
 import type { ExportOptions } from '../dialogs/ExportDialog'
 import { Workspace } from '../Workspace'
@@ -77,13 +87,21 @@ export function WorkspaceView() {
   const draftReplaces = useToolStore((s) => s.draftReplaces)
   const activeSketchId = useToolStore((s) => s.activeSketchId)
 
+  const toast = useToast()
+  const [engine, setEngine] = useState<ViewportEngine | null>(null)
+
   const kernel = useKernel(doc, draft, draftReplaces)
-  const extrude = useExtrudeTool(kernel.regions, kernel.statuses, kernel.busy)
+  const extrude = useExtrudeTool(kernel, engine)
+  const revolve = useRevolveTool(kernel)
+  const fillet = useEdgeBlendTool('fillet', kernel)
+  const chamfer = useEdgeBlendTool('chamfer', kernel)
+  const shell = useShellTool(kernel)
+  const combine = useCombineTool(kernel)
+  const transform = useTransformTool(kernel, engine)
+  const plane = usePlaneTool(kernel, engine)
   useHistoryEdit()
   useSolverInit()
   const solverReady = useSketchUi((s) => s.solver === 'ready')
-
-  const [engine, setEngine] = useState<ViewportEngine | null>(null)
 
   // Dev-only test hook (no-op in production builds).
   const engineReady = useRef(false)
@@ -93,45 +111,75 @@ export function WorkspaceView() {
   const sketching = activeSketchId !== null
   const sketchTool = activeTool?.startsWith('sketch.') ?? false
   const noBodies = Object.keys(doc.bodies).length === 0
-  const planesVisible = !sketching && (noBodies || (sketchTool && !sketching))
+  const planesVisible = !sketching && (noBodies || sketchTool || activeTool === 'plane')
 
   // ---- tool wiring ----------------------------------------------------------------------------------
 
-  // A sketch tool with a plane selected opens a sketch on that plane.
+  // A sketch tool with a plane or flat face selected opens a sketch on it.
+  const openingFor = useRef<string | null>(null)
   useEffect(() => {
-    if (!sketchTool || sketching) return
-    const plane = selection.find((r) => r.kind === 'originPlane')
-    if (plane) startSketchOn(plane.name as OriginPlaneName)
-  }, [sketchTool, sketching, selection])
+    if (!sketchTool || sketching) {
+      openingFor.current = null
+      return
+    }
+    const target = selection.find(
+      (r) => r.kind === 'originPlane' || r.kind === 'constructionPlane' || r.kind === 'face',
+    )
+    if (!target) {
+      openingFor.current = null
+      return
+    }
+    if (target.kind === 'originPlane') {
+      startSketchOn(target.name as OriginPlaneName)
+      return
+    }
+    const key = `${target.kind}:${target.name}`
+    if (openingFor.current === key) return
+    openingFor.current = key
+    void getKernel()
+      .planeFrame(target)
+      .then((frame) => {
+        if (openingFor.current !== key) return
+        openingFor.current = null
+        const s = useProjectStore.getState()
+        if (useToolStore.getState().activeSketchId !== null || !s.activeTool?.startsWith('sketch.')) return
+        if (!frame) {
+          toast({ variant: 'error', title: 'Cannot sketch on this face', description: 'Pick a flat face or a plane.' })
+          s.setSelection([])
+          return
+        }
+        startSketchOn(target, frame)
+      })
+      .catch(() => {
+        if (openingFor.current === key) openingFor.current = null
+      })
+  }, [sketchTool, sketching, selection, toast])
 
-  // Choosing a solid tool while sketching ends the sketch (the tool stays).
+  // Choosing a non-sketch tool while sketching ends the sketch (the tool stays).
   useEffect(() => {
     if (sketching && activeTool && !sketchTool) endSketch()
   }, [sketching, activeTool, sketchTool])
 
   // ---- viewport sync --------------------------------------------------------------------------------
 
+  const meshesRef = useRef(kernel.meshes)
+  meshesRef.current = kernel.meshes
+
   useEffect(() => {
     if (!engine) return
-    engine.onPick = (ref, additive) => {
-      const s = useProjectStore.getState()
-      if (!ref) {
-        if (!additive) s.setSelection([])
-        return
-      }
-      if (additive) {
-        const has = s.selection.some((r) => r.kind === ref.kind && r.name === ref.name)
-        s.setSelection(has ? s.selection.filter((r) => !(r.kind === ref.kind && r.name === ref.name)) : [...s.selection, ref])
-      } else s.setSelection([ref])
-    }
+    engine.onPick = (ref, additive) => handlePick(ref, additive, meshesRef.current)
   }, [engine])
 
   useEffect(() => {
     engine?.setBodies(kernel.meshes, doc.bodies)
   }, [engine, kernel.meshes, doc.bodies])
 
+  useEffect(() => {
+    engine?.setConstructionPlanes(kernel.planes)
+  }, [engine, kernel.planes])
+
   const regionList = useMemo(() => {
-    if (activeTool === 'extrude') return Object.values(kernel.regions).flat()
+    if (activeTool === 'extrude' || activeTool === 'revolve') return Object.values(kernel.regions).flat()
     if (activeSketchId) return kernel.regions[activeSketchId] ?? []
     return []
   }, [activeTool, activeSketchId, kernel.regions])
@@ -143,15 +191,37 @@ export function WorkspaceView() {
   useEffect(() => {
     if (!engine) return
     engine.setPlanesVisible(planesVisible)
-    engine.setPickMode({ bodies: !sketching, planes: planesVisible, regions: activeTool === 'extrude' }, !sketching)
-  }, [engine, planesVisible, sketching, activeTool])
+    engine.setConstructionPlanesVisible(!sketching)
+    const bodyPick: PickMode['bodyPick'] =
+      activeTool === 'fillet' || activeTool === 'chamfer'
+        ? 'edge'
+        : activeTool === 'combine' ||
+            activeTool === 'move' ||
+            ((activeTool === 'extrude' || activeTool === 'revolve') &&
+              (draft?.type === 'extrude' || draft?.type === 'revolve') &&
+              draft.params.mode !== 'new')
+          ? 'solid'
+          : activeTool === 'shell' || activeTool === 'plane' || (sketchTool && !sketching)
+            ? 'face'
+            : 'face-edge'
+    engine.setPickMode(
+      {
+        bodies: !sketching,
+        planes: planesVisible,
+        regions: activeTool === 'extrude' || activeTool === 'revolve',
+        bodyPick,
+      },
+      !sketching,
+    )
+  }, [engine, planesVisible, sketching, sketchTool, activeTool, draft])
 
   useEffect(() => {
     if (!engine) return
     const refs = [...selection]
-    for (const p of extrude.profiles) if (!refs.some((r) => r.name === p.name)) refs.push(p)
+    const extra = [...extrude.profiles, ...revolve.profiles, ...fillet.edges, ...chamfer.edges]
+    for (const p of extra) if (!refs.some((r) => r.kind === p.kind && r.name === p.name)) refs.push(p)
     engine.setSelection(refs)
-  }, [engine, selection, extrude.profiles])
+  }, [engine, selection, extrude.profiles, revolve.profiles, fillet.edges, chamfer.edges])
 
   // ---- zoom to fit ----------------------------------------------------------------------------------
 
@@ -180,7 +250,7 @@ export function WorkspaceView() {
       const s = useProjectStore.getState()
       if (e.key === 'Escape') {
         if (useToolStore.getState().draft) {
-          cancelExtrude()
+          cancelDraft()
           s.setActiveTool(null)
         } else if (s.selection.length > 0) s.setSelection([])
         else if (s.activeTool) s.setActiveTool(null)
@@ -212,32 +282,35 @@ export function WorkspaceView() {
 
   // ---- export ---------------------------------------------------------------------------------------
 
-  const onExport = useCallback(
-    async (opts: ExportOptions) => {
-      if (useToolStore.getState().draft) throw new Error('Apply or cancel the open tool first.')
-      const s = useProjectStore.getState()
-      const ids = Object.entries(s.doc.bodies)
-        .filter(([, b]) => b.visible)
-        .map(([id]) => id)
-      if (ids.length === 0) throw new Error('There is nothing visible to export.')
-      const high = opts.quality === 'high'
-      const buffer = await getKernel().exportFile('stl', ids, {
-        tolerance: high ? 0.01 : 0.1,
-        angularTolerance: high ? 0.1 : 0.5,
-        binary: opts.binary,
-      })
-      if (buffer.byteLength === 0) throw new Error('The export came out empty. Try again.')
-      const safe = s.name.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'model'
-      downloadBlob(new Blob([buffer], { type: 'model/stl' }), `${safe}.stl`)
-    },
-    [],
-  )
+  const onExport = useCallback(async (opts: ExportOptions) => {
+    if (useToolStore.getState().draft) throw new Error('Apply or cancel the open tool first.')
+    const s = useProjectStore.getState()
+    const live = useToolStore.getState().liveBodies
+    const ids = Object.entries(s.doc.bodies)
+      .filter(([id, b]) => b.visible && (!live || live.includes(id)))
+      .map(([id]) => id)
+    if (ids.length === 0) throw new Error('There is nothing visible to export.')
+    const high = opts.quality === 'high'
+    const buffer = await getKernel().exportFile('stl', ids, {
+      tolerance: high ? 0.01 : 0.1,
+      angularTolerance: high ? 0.1 : 0.5,
+      binary: opts.binary,
+    })
+    if (buffer.byteLength === 0) throw new Error('The export came out empty. Try again.')
+    const safe = s.name.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'model'
+    downloadBlob(new Blob([buffer], { type: 'model/stl' }), `${safe}.stl`)
+  }, [])
 
   // ---- status ---------------------------------------------------------------------------------------
 
   const sketchFeature = activeSketchId ? doc.features.find((f) => f.id === activeSketchId) : undefined
+  const onRef = sketchFeature?.type === 'sketch' ? sketchFeature.params.on : undefined
   const planeLabel =
-    sketchFeature?.type === 'sketch' ? (ORIGIN_PLANE_LABELS[sketchFeature.params.on.name as OriginPlaneName] ?? 'a plane') : 'a plane'
+    onRef?.kind === 'originPlane'
+      ? (ORIGIN_PLANE_LABELS[onRef.name as OriginPlaneName] ?? 'a plane')
+      : onRef?.kind === 'face'
+        ? 'a face'
+        : 'a plane'
 
   let hint: ReactNode = null
   if (kernel.engine === 'loading') {
@@ -255,9 +328,11 @@ export function WorkspaceView() {
       </Chip>
     )
   } else if (sketchTool) {
-    hint = <Chip>Pick a plane to sketch on</Chip>
+    hint = <Chip>Pick a plane or flat face to sketch on</Chip>
   } else if (extrude.picking) {
     hint = <Chip>Pick a shape to extrude</Chip>
+  } else if (revolve.picking) {
+    hint = <Chip>Pick a shape to revolve</Chip>
   }
 
   const status = (
@@ -283,17 +358,30 @@ export function WorkspaceView() {
     </>
   )
 
+  const overlay =
+    extrude.card ??
+    revolve.card ??
+    fillet.card ??
+    chamfer.card ??
+    shell.card ??
+    combine.card ??
+    transform.card ??
+    plane.card
+
   return (
     <Workspace
       viewport={
         <Viewport onEngine={setEngine}>
           {engine ? <SketchLayer engine={engine} /> : null}
+          {extrude.handle}
+          {transform.handle}
+          {plane.handle}
           <div className="sr-only" aria-live="polite">
             {describe(selection)}
           </div>
         </Viewport>
       }
-      overlay={extrude.card}
+      overlay={overlay}
       statuses={kernel.statuses}
       status={status}
       busy={kernel.busy}

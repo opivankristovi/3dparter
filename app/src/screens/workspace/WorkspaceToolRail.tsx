@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { ArrowUpFromLine, Circle, RectangleHorizontal, Slash, Spline } from 'lucide-react'
+import { ChamferIcon, CombineIcon, FilletIcon, MoveIcon, PlaneIcon, RevolveIcon, ShellIcon } from '../../ui/ModelIcons'
 import { Toolbar, ToolbarSeparator } from '../../ui/Toolbar'
 import { ToolButton } from '../../ui/ToolButton'
 import { cn } from '../../ui/cn'
@@ -22,6 +23,13 @@ export const SKETCH_TOOLS: ToolDef[] = [
 ]
 export const SOLID_TOOLS: ToolDef[] = [
   { id: 'extrude', label: 'Extrude', icon: <ArrowUpFromLine {...i} />, shortcut: 'E', kind: 'solid' },
+  { id: 'revolve', label: 'Revolve', icon: <RevolveIcon {...i} />, shortcut: 'O', kind: 'solid' },
+  { id: 'fillet', label: 'Fillet', icon: <FilletIcon {...i} />, shortcut: 'G', kind: 'solid' },
+  { id: 'chamfer', label: 'Chamfer', icon: <ChamferIcon {...i} />, shortcut: 'K', kind: 'solid' },
+  { id: 'shell', label: 'Shell', icon: <ShellIcon {...i} />, shortcut: 'S', kind: 'solid' },
+  { id: 'combine', label: 'Combine', icon: <CombineIcon {...i} />, shortcut: 'J', kind: 'solid' },
+  { id: 'move', label: 'Move', icon: <MoveIcon {...i} />, shortcut: 'M', kind: 'solid' },
+  { id: 'plane', label: 'Plane', icon: <PlaneIcon {...i} />, shortcut: 'P', kind: 'solid' },
 ]
 export const ALL_TOOLS = [...SKETCH_TOOLS, ...SOLID_TOOLS]
 
@@ -64,12 +72,19 @@ export function WorkspaceToolRail({ activeTool, onToolChange, orientation, label
       className={cn(
         'bg-surface-raised shadow-panel',
         vertical
-          ? cn('flex flex-col items-center rounded-lg py-2', rows ? 'w-(--layout-toolrail-labelled-w) px-2' : 'w-(--layout-toolrail-w)')
-          : 'flex justify-center rounded-lg px-2 py-1',
+          ? cn(
+              'flex max-h-[calc(100dvh-var(--layout-topbar-h)-1.5rem)] flex-col items-center overflow-y-auto rounded-lg py-2',
+              rows ? 'w-(--layout-toolrail-labelled-w) px-2' : 'w-(--layout-toolrail-w)',
+            )
+          : 'flex max-w-full justify-center rounded-lg px-2 py-1',
         className,
       )}
     >
-      <Toolbar label="Tools" orientation={orientation} className={cn('gap-1', rows && 'w-full items-stretch')}>
+      <Toolbar
+        label="Tools"
+        orientation={orientation}
+        className={cn('gap-1', rows && 'w-full items-stretch', !vertical && 'max-w-full flex-wrap justify-center')}
+      >
         {rows ? caption('Draw') : null}
         {SKETCH_TOOLS.map(render)}
         <ToolbarSeparator orientation={orientation} wide={rows} />

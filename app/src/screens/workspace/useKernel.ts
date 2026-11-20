@@ -1,8 +1,11 @@
 // Connects the open document to the kernel worker: engine loading, regeneration, meshes and sketch regions.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { Feature, ProjectDocument } from '../../doc/types'
+import { ORIGIN_PLANES } from '../../doc/types'
+import type { Feature, OriginPlaneName, PlaneFrame, ProjectDocument } from '../../doc/types'
 import type { MeshData, SketchRegionData } from '../../kernel/api'
 import { getKernel, restartKernel } from '../../kernel/client'
+import { isPreviewable } from '../../modeling/logic'
+import { useToolStore } from './toolStore'
 import type { FeatureStatuses } from './SidebarTabs'
 
 export type EngineState = 'loading' | 'ready' | 'error'
@@ -11,7 +14,7 @@ const DEBOUNCE_MS = 30
 
 /** The document plus the draft: appended if new, swapped in place if it replaces an existing step. */
 export function effectiveDocument(doc: ProjectDocument, draft: Feature | null, replaces: string | null): ProjectDocument {
-  if (!draft) return doc
+  if (!draft || !isPreviewable(draft)) return doc
   const features =
     replaces && doc.features.some((f) => f.id === replaces)
       ? doc.features.map((f) => (f.id === replaces ? draft : f))
@@ -19,8 +22,8 @@ export function effectiveDocument(doc: ProjectDocument, draft: Feature | null, r
   return { ...doc, features }
 }
 
-function sketchSignature(f: Feature): string {
-  return f.type === 'sketch' ? JSON.stringify([f.params, f.sketch, f.suppressed]) : ''
+function sketchSignature(f: Feature, frame: PlaneFrame | null | undefined): string {
+  return f.type === 'sketch' ? JSON.stringify([f.params, f.sketch, f.suppressed, frame ?? null]) : ''
 }
 
 export interface KernelState {
@@ -32,10 +35,16 @@ export interface KernelState {
   meshes: Map<string, MeshData>
   /** Closed regions by sketch feature id. */
   regions: Record<string, SketchRegionData[]>
+  /** Construction planes produced by plane features, in feature order. */
+  planes: { name: string; frame: PlaneFrame }[]
   /** A regenerate is waiting or running. */
   busy: boolean
   /** Counts up after each regenerate that finished and applied. */
   settled: number
+  /** Bodies that exist after the last regenerate (a body consumed by a Combine is not among them). */
+  bodies: string[]
+  /** True when the result on screen is for the draft as it is right now (not for an earlier edit of it). */
+  isDraftCurrent(): boolean
 }
 
 export function useKernel(doc: ProjectDocument, draft: Feature | null, draftReplaces: string | null): KernelState {
@@ -45,8 +54,12 @@ export function useKernel(doc: ProjectDocument, draft: Feature | null, draftRepl
   const [statuses, setStatuses] = useState<FeatureStatuses>({})
   const [meshes, setMeshes] = useState<Map<string, MeshData>>(() => new Map())
   const [regions, setRegions] = useState<Record<string, SketchRegionData[]>>({})
+  const [planes, setPlanes] = useState<{ name: string; frame: PlaneFrame }[]>([])
   const [busy, setBusy] = useState(false)
   const [settled, setSettled] = useState(0)
+  const [bodies, setBodies] = useState<string[]>([])
+  /** The draft object the applied result was computed for. */
+  const settledDraft = useRef<Feature | null>(null)
 
   const generation = useRef(0)
   /** Bodies the kernel reported as changed but whose mesh we have not applied yet (a result was dropped). */
@@ -115,11 +128,18 @@ export function useKernel(doc: ProjectDocument, draft: Feature | null, draftRepl
         )
         if (cancelled || mine !== generation.current) return
 
-        // Regions for every sketch whose content changed.
+        // Frames and regions for every active sketch.
+        const nextFrames: Record<string, PlaneFrame> = {}
         const nextRegions: Record<string, SketchRegionData[]> = {}
         for (const f of effective.features) {
           if (f.type !== 'sketch' || f.suppressed) continue
-          const sig = sketchSignature(f)
+          const frame =
+            f.params.on.kind === 'originPlane'
+              ? ORIGIN_PLANES[f.params.on.name as OriginPlaneName]
+              : await kernel.sketchFrame(f.id).catch(() => null)
+          if (cancelled || mine !== generation.current) return
+          if (frame) nextFrames[f.id] = frame
+          const sig = sketchSignature(f, frame)
           const cached = regionCache.current.get(f.id)
           if (cached && cached.sig === sig) {
             nextRegions[f.id] = cached.data
@@ -130,6 +150,11 @@ export function useKernel(doc: ProjectDocument, draft: Feature | null, draftRepl
           regionCache.current.set(f.id, { sig, data })
           nextRegions[f.id] = data
         }
+
+        const nextPlanes = effective.features.some((f) => f.type === 'plane' && !f.suppressed)
+          ? await kernel.constructionPlanes().catch(() => [])
+          : []
+        if (cancelled || mine !== generation.current) return
 
         // Apply.
         const nextMeshes = new Map<string, MeshData>()
@@ -142,7 +167,13 @@ export function useKernel(doc: ProjectDocument, draft: Feature | null, draftRepl
         for (const id of [...pending.current]) if (!alive.has(id)) pending.current.delete(id)
 
         const st: FeatureStatuses = {}
-        for (const s of res.statuses) st[s.featureId] = { ok: s.ok, message: s.message }
+        for (const s of res.statuses) st[s.featureId] = { ok: s.ok, message: s.message, warning: s.warning }
+        settledDraft.current = draft && isPreviewable(draft) ? draft : null
+        const toolState = useToolStore.getState()
+        toolState.setSketchFrames(nextFrames)
+        if (!draft || toolState.liveBodies === null) toolState.setLiveBodies(res.bodies)
+        setPlanes(nextPlanes)
+        setBodies(res.bodies)
         setMeshes(nextMeshes)
         setRegions(nextRegions)
         setStatuses(st)
@@ -161,5 +192,10 @@ export function useKernel(doc: ProjectDocument, draft: Feature | null, draftRepl
     }
   }, [effective, engine])
 
-  return { engine, error, retry, statuses, meshes, regions, busy, settled }
+  const isDraftCurrent = useCallback(() => {
+    const cur = useToolStore.getState().draft
+    return cur !== null && isPreviewable(cur) && cur === settledDraft.current
+  }, [])
+
+  return { engine, error, retry, statuses, meshes, regions, planes, busy, settled, bodies, isDraftCurrent }
 }

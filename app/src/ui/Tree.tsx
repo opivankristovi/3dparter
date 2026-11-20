@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
-import { ChevronDown, ChevronRight, CircleAlert, Eye, EyeOff } from 'lucide-react'
+import { ChevronDown, ChevronRight, CircleAlert, Eye, EyeOff, TriangleAlert } from 'lucide-react'
 import { Tooltip } from './Tooltip'
 import { cn } from './cn'
 
@@ -15,6 +15,8 @@ export interface TreeNode {
   beyondRollback?: boolean
   /** Reason shown in a tooltip next to the error glyph. */
   error?: string
+  /** Non-fatal warning shown next to the warning glyph when there is no error. */
+  warning?: string
 }
 
 interface FlatNode {
@@ -149,6 +151,13 @@ export function TreeRow({
             <span className="sr-only">Error: {node.error}</span>
           </span>
         </Tooltip>
+      ) : node.warning ? (
+        <Tooltip label={node.warning} side="left">
+          <span className="flex text-warning">
+            <TriangleAlert size={16} strokeWidth={1.75} aria-hidden="true" />
+            <span className="sr-only">Warning: {node.warning}</span>
+          </span>
+        </Tooltip>
       ) : null}
       {onToggleHidden ? (
         <button
@@ -177,6 +186,7 @@ export interface TreeProps {
   nodes: TreeNode[]
   label: string
   selectedId?: string
+  selectedIds?: string[]
   onSelect?: (id: string) => void
   defaultExpanded?: string[]
   onToggleHidden?: (id: string) => void
@@ -190,6 +200,7 @@ export function Tree({
   nodes,
   label,
   selectedId,
+  selectedIds,
   onSelect,
   defaultExpanded = [],
   onToggleHidden,
@@ -198,10 +209,11 @@ export function Tree({
   className,
 }: TreeProps) {
   const [expanded, setExpanded] = useState(() => new Set(defaultExpanded))
-  const [focusId, setFocusId] = useState<string | undefined>(selectedId ?? nodes[0]?.id)
+  const [focusId, setFocusId] = useState<string | undefined>(selectedId ?? selectedIds?.[0] ?? nodes[0]?.id)
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const root = useRef<HTMLDivElement>(null)
   const flat = useMemo(() => flatten(nodes, expanded), [nodes, expanded])
+  const selectedSet = useMemo(() => new Set(selectedIds ?? (selectedId ? [selectedId] : [])), [selectedId, selectedIds])
 
   useEffect(() => {
     if (focusId && !flat.some((f) => f.node.id === focusId)) setFocusId(flat[0]?.node.id)
@@ -277,7 +289,7 @@ export function Tree({
           setSize={f.setSize}
           posInSet={f.posInSet}
           expanded={expanded.has(f.node.id)}
-          selected={selectedId === f.node.id}
+          selected={selectedSet.has(f.node.id)}
           focusable={focusId === f.node.id}
           renaming={renamingId === f.node.id}
           onSelect={() => {

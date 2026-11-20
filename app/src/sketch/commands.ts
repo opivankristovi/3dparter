@@ -1,7 +1,7 @@
 // Sketch edits. Each call is exactly one undo step.
 import { addFeature, newId, nextFeatureName } from '../doc/commands'
 import { useProjectStore } from '../doc/store'
-import type { Expr, OriginPlaneName, Sketch, SketchConstraint, SketchEntity, SketchFeature } from '../doc/types'
+import type { Expr, OriginPlaneName, Ref, Sketch, SketchConstraint, SketchEntity, SketchFeature } from '../doc/types'
 import { mustBePositive, isDimensional } from './solver/constraints'
 import { measureConstraint } from './solver/measure'
 import { refEntityId } from './solver/refs'
@@ -9,15 +9,16 @@ import { ensureSolver, solveSketch } from './solver/solver'
 import type { SolveResult } from './solver/solver'
 import { evalValue } from './solver/value'
 
-/** Creates an empty sketch on an origin plane ("Sketch N") and returns its id. */
-export function createSketch(plane: OriginPlaneName): string {
+/** Creates an empty sketch on a plane or flat face ("Sketch N") and returns its id. */
+export function createSketch(plane: OriginPlaneName | Ref): string {
   const doc = useProjectStore.getState().doc
+  const on: Ref = typeof plane === 'string' ? { kind: 'originPlane', name: plane } : plane
   const feature: SketchFeature = {
     id: newId(),
     type: 'sketch',
     name: nextFeatureName(doc, 'sketch'),
     suppressed: false,
-    params: { on: { kind: 'originPlane', name: plane } },
+    params: { on },
     sketch: { entities: [], constraints: [] },
   }
   addFeature(feature, feature.name)

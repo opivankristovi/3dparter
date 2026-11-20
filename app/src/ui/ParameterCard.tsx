@@ -57,7 +57,9 @@ export function ParameterCard({
   const body = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    body.current?.querySelector<HTMLElement>('input:not([disabled]), button:not([disabled])')?.focus()
+    // The first field, or else the first button.
+    const el = body.current?.querySelector<HTMLElement>('input:not([disabled])') ?? body.current?.querySelector<HTMLElement>('button:not([disabled])')
+    el?.focus()
   }, [])
 
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {

@@ -12,6 +12,8 @@ import type { MeshData, SketchRegionData } from '../kernel/api'
 import type { EntityState } from '../sketch/solver/defined'
 import { circlePolyline, localToWorld, rayPlane, worldToLocal } from '../sketch/geometry'
 import { buildGroups, faceNameAtTriangle, sortFaces } from './pick'
+import { EDGE_PICK_PX, edgeHint, edgeSegments, faceHint, nearestOnEdge2D } from './hints'
+import type { RefHint } from './hints'
 import type { FaceRange } from './pick'
 
 
@@ -53,6 +55,11 @@ export interface PickMode {
   bodies: boolean
   planes: boolean
   regions: boolean
+  /**
+   * What a click on a solid gives. 'face-edge' (default): a face, or an edge when one lies within 6 px of the
+   * pointer (edges win). 'edge': only edges. 'face': only faces. 'solid': the whole solid, faces and edges ignored.
+   */
+  bodyPick?: 'face-edge' | 'edge' | 'face' | 'solid'
 }
 
 export interface SketchGroup {
@@ -76,6 +83,12 @@ interface BodyObj {
   pickGeo: THREE.BufferGeometry
   edgeGeo: THREE.BufferGeometry
   visible: boolean
+  /** Edges as world-space segments, by name, for picking and for the highlight lines. */
+  edgeList: { name: string; seg: number[] }[]
+  edgeByName: Map<string, { name: string; seg: number[] }>
+  faceByName: Map<string, FaceRange>
+  /** Hints are computed when something is first picked, then kept. */
+  hints: Map<string, RefHint>
 }
 
 interface RegionObj {
@@ -143,16 +156,20 @@ export class ViewportEngine {
   private bodiesGroup = new THREE.Group()
   private grid = new THREE.Group()
   private planesGroup = new THREE.Group()
+  private cPlanesGroup = new THREE.Group()
   private regionsGroup = new THREE.Group()
   private sketchGroup = new THREE.Group()
   private marksGroup = new THREE.Group()
+  private edgeMarksGroup = new THREE.Group()
   private previewGroup = new THREE.Group()
   private hemi: THREE.HemisphereLight
   private sun: THREE.DirectionalLight
 
   private bodies = new Map<string, BodyObj>()
   private regions: RegionObj[] = []
+  private planeGeo = new THREE.PlaneGeometry(PLANE_SIZE, PLANE_SIZE)
   private planeMeshes = new Map<OriginPlaneName, THREE.Mesh>()
+  private cPlaneMeshes = new Map<string, THREE.Mesh>()
   private planeLabels: THREE.Sprite[] = []
   private snapDot: THREE.Points
   private snapDotMat: THREE.PointsMaterial
@@ -284,7 +301,16 @@ export class ViewportEngine {
     for (let i = 0; i < 3; i++) this.axisMats.push(new THREE.LineBasicMaterial())
 
     this.buildStatic()
-    this.helpers.add(this.grid, this.planesGroup, this.regionsGroup, this.sketchGroup, this.marksGroup, this.previewGroup)
+    this.helpers.add(
+      this.grid,
+      this.planesGroup,
+      this.cPlanesGroup,
+      this.regionsGroup,
+      this.sketchGroup,
+      this.marksGroup,
+      this.edgeMarksGroup,
+      this.previewGroup,
+    )
     this.scene.add(this.bodiesGroup, this.helpers)
 
     const dotCanvas = document.createElement('canvas')
@@ -540,10 +566,9 @@ export class ViewportEngine {
       this.grid.add(l)
     })
 
-    const planeGeo = new THREE.PlaneGeometry(PLANE_SIZE, PLANE_SIZE)
     for (const name of Object.keys(ORIGIN_PLANES) as OriginPlaneName[]) {
       const f = ORIGIN_PLANES[name]
-      const mesh = new THREE.Mesh(planeGeo, this.planeMats[0])
+      const mesh = new THREE.Mesh(this.planeGeo, this.planeMats[0])
       mesh.matrixAutoUpdate = false
       mesh.matrix.makeBasis(new THREE.Vector3(...f.xDir), new THREE.Vector3(...f.yDir), new THREE.Vector3(...f.normal))
       mesh.matrixWorldNeedsUpdate = true
@@ -638,7 +663,24 @@ export class ViewportEngine {
     group.add(mesh, edges)
     this.bodiesGroup.add(group)
     this.requestRender()
-    return { id, data, sorted: sortFaces(data.faces), group, mesh, edges, pick, geo, pickGeo, edgeGeo, visible: true }
+    const edgeList = data.edges.map((e) => ({ name: e.name, seg: edgeSegments(e.points) }))
+    return {
+      id,
+      data,
+      sorted: sortFaces(data.faces),
+      group,
+      mesh,
+      edges,
+      pick,
+      geo,
+      pickGeo,
+      edgeGeo,
+      visible: true,
+      edgeList,
+      edgeByName: new Map(edgeList.map((e) => [e.name, e])),
+      faceByName: new Map(data.faces.map((f) => [f.name, f])),
+      hints: new Map(),
+    }
   }
 
   private disposeBody(obj: BodyObj) {
@@ -656,6 +698,43 @@ export class ViewportEngine {
     this.planesVisible = v
     this.planesGroup.visible = v
     this.requestRender()
+  }
+
+  setConstructionPlanesVisible(v: boolean) {
+    this.cPlanesGroup.visible = v
+    this.requestRender()
+  }
+
+  private clearConstructionPlanes() {
+    for (const c of [...this.cPlanesGroup.children]) {
+      this.cPlanesGroup.remove(c)
+      if (c instanceof THREE.LineLoop) c.geometry.dispose()
+    }
+    this.cPlaneMeshes.clear()
+  }
+
+  setConstructionPlanes(list: { name: string; frame: PlaneFrame }[]) {
+    this.clearConstructionPlanes()
+    const h = PLANE_SIZE / 2
+    const corners: Vec2[] = [
+      [-h, -h],
+      [h, -h],
+      [h, h],
+      [-h, h],
+    ]
+    for (const { name, frame } of list) {
+      const mesh = new THREE.Mesh(this.planeGeo, this.planeMats[0])
+      mesh.matrixAutoUpdate = false
+      mesh.matrix.makeBasis(new THREE.Vector3(...frame.xDir), new THREE.Vector3(...frame.yDir), new THREE.Vector3(...frame.normal))
+      mesh.matrix.setPosition(frame.origin[0], frame.origin[1], frame.origin[2])
+      mesh.matrixWorldNeedsUpdate = true
+      mesh.userData = { kind: 'constructionPlane', name }
+      this.cPlaneMeshes.set(name, mesh)
+      const outline = new THREE.LineLoop(lineGeometry(corners.flatMap((c) => localToWorld(c, frame))), this.planeLineMat)
+      outline.frustumCulled = false
+      this.cPlanesGroup.add(mesh, outline)
+    }
+    this.refreshHighlights()
   }
 
   setPickMode(mode: PickMode, enabled: boolean) {
@@ -708,17 +787,47 @@ export class ViewportEngine {
   private refreshHighlights() {
     for (const obj of this.bodies.values()) {
       const bodySel = this.selection.some((r) => r.kind === 'body' && r.name === obj.id)
+      const bodyHov = this.hover?.kind === 'body' && this.hover.name === obj.id
       const total = obj.data.indices.length
       const groups = buildGroups(obj.sorted, total, (face) => {
-        const s = this.stateOf('face', face)
-        return bodySel ? Math.max(s, 2) : s
+        let s = this.stateOf('face', face)
+        if (bodySel) s = Math.max(s, 2)
+        if (bodyHov) s |= 1
+        return s
       })
       obj.geo.clearGroups()
       for (const g of groups) obj.geo.addGroup(g.start, g.count, g.materialIndex)
     }
     for (const [name, mesh] of this.planeMeshes) mesh.material = this.planeMats[this.stateOf('originPlane', name)]
+    for (const [name, mesh] of this.cPlaneMeshes) mesh.material = this.planeMats[this.stateOf('constructionPlane', name)]
     for (const r of this.regions) r.mesh.material = this.regionMats[this.stateOf('sketchRegion', r.name)]
+    this.refreshEdgeMarks()
     this.requestRender()
+  }
+
+  /** Selected and hovered edges as wide lines on top of the model. */
+  private refreshEdgeMarks() {
+    this.disposeChildren(this.edgeMarksGroup)
+    const find = (name: string) => {
+      for (const b of this.bodies.values()) {
+        const e = b.edgeByName.get(name)
+        if (e && b.visible) return e.seg
+      }
+      return undefined
+    }
+    const add = (refs: Ref[], mat: LineMaterial, order: number) => {
+      const seg: number[] = []
+      for (const r of refs) if (r.kind === 'edge') seg.push(...(find(r.name) ?? []))
+      if (seg.length === 0) return
+      const geo = new LineSegmentsGeometry()
+      geo.setPositions(seg)
+      const l = new LineSegments2(geo, mat)
+      l.renderOrder = order
+      l.frustumCulled = false
+      this.edgeMarksGroup.add(l)
+    }
+    add(this.selection, this.selectLineMat, 7)
+    if (this.hover) add([this.hover], this.hoverLineMat, 8)
   }
 
   // ---- picking --------------------------------------------------------------------------------
@@ -732,21 +841,117 @@ export class ViewportEngine {
 
   pickAt(clientX: number, clientY: number): Ref | null {
     this.scene.updateMatrixWorld()
+    this.camera.updateMatrixWorld()
     this.setNdc(clientX, clientY)
+    const pickKind = this.mode.bodyPick ?? 'face-edge'
     const objs: THREE.Object3D[] = []
     if (this.mode.bodies) for (const b of this.bodies.values()) if (b.visible) objs.push(b.pick)
     if (this.mode.planes && this.planesVisible) objs.push(...this.planeMeshes.values())
+    if (this.cPlanesGroup.visible && (this.mode.planes || (this.mode.bodies && pickKind === 'face-edge'))) {
+      objs.push(...this.cPlaneMeshes.values())
+    }
     if (this.mode.regions) for (const r of this.regions) objs.push(r.mesh)
     if (objs.length === 0) return null
-    const hit = this.raycaster.intersectObjects(objs, false)[0]
+    const hits = this.raycaster.intersectObjects(objs, false)
+    let hit = hits[0]
+    // An opaque solid face wins over translucent origin planes that pass in front of it.
+    if (hit && hit.object.userData.kind === 'originPlane' && pickKind === 'face') {
+      const bodyHit = hits.find((h) => h.object.userData.kind === 'body')
+      if (bodyHit) hit = bodyHit
+    }
+    // A sketch shape that lies in the plane of a solid's face wins over that face.
+    if (hit && hit.object.userData.kind === 'body') {
+      const first = hit
+      const region = hits.find((h) => h.object.userData.kind === 'sketchRegion' && h.distance <= first.distance + 0.05)
+      if (region) hit = region
+    }
+
+    if (this.mode.bodies && pickKind !== 'solid' && pickKind !== 'face') {
+      const edge = this.nearestEdge(clientX, clientY, hit ? hit.distance : Infinity)
+      if (edge) return edge
+    }
     if (!hit) return null
     const ud = hit.object.userData as { kind: string; name?: string; bodyId?: string }
     if (ud.kind === 'originPlane') return { kind: 'originPlane', name: ud.name as string }
+    if (ud.kind === 'constructionPlane') return { kind: 'constructionPlane', name: ud.name as string }
     if (ud.kind === 'sketchRegion') return { kind: 'sketchRegion', name: ud.name as string }
     const body = this.bodies.get(ud.bodyId as string)
     if (!body) return null
+    if (pickKind === 'solid') return { kind: 'body', name: body.id }
+    if (pickKind === 'edge') return null
     const face = hit.faceIndex == null ? null : faceNameAtTriangle(body.sorted, hit.faceIndex)
-    return face ? { kind: 'face', name: face } : { kind: 'body', name: body.id }
+    return face ? { kind: 'face', name: face, hint: this.faceHintOf(body, face) } : { kind: 'body', name: body.id }
+  }
+
+  private faceHintOf(body: BodyObj, name: string): RefHint | undefined {
+    const key = `face:${name}`
+    let h = body.hints.get(key)
+    if (!h) {
+      const range = body.faceByName.get(name)
+      if (!range) return undefined
+      h = faceHint(body.data.positions, body.data.indices, range.start, range.count)
+      body.hints.set(key, h)
+    }
+    return h
+  }
+
+  /**
+   * The edge closest to the pointer, if it is within EDGE_PICK_PX on screen and not hidden behind a surface
+   * that is `limit` away along the view ray.
+   */
+  private nearestEdge(clientX: number, clientY: number, limit: number): Ref | null {
+    const rect = this.canvas.getBoundingClientRect()
+    const view = this.camera.matrixWorldInverse
+    const near = this.camera.near
+    const eye = this.camera.position
+    const tmp = new THREE.Vector3()
+    const toScreen = (x: number, y: number, z: number): [number, number, number] | null => {
+      tmp.set(x, y, z)
+      // Camera space looks down -z: anything closer than the near plane cannot be projected.
+      const camZ = tmp.clone().applyMatrix4(view).z
+      if (camZ > -near) return null
+      tmp.project(this.camera)
+      return [rect.left + ((tmp.x + 1) / 2) * rect.width, rect.top + ((1 - tmp.y) / 2) * rect.height, -camZ]
+    }
+    let best: { distance: number; body: BodyObj; name: string } | null = null
+    for (const body of this.bodies.values()) {
+      if (!body.visible) continue
+      for (const e of body.edgeList) {
+        const screen: number[] = []
+        const kept: number[] = []
+        const depths: number[] = []
+        for (let i = 0; i + 5 < e.seg.length; i += 6) {
+          const p = toScreen(e.seg[i], e.seg[i + 1], e.seg[i + 2])
+          const q = toScreen(e.seg[i + 3], e.seg[i + 4], e.seg[i + 5])
+          if (!p || !q) continue
+          screen.push(p[0], p[1], q[0], q[1])
+          depths.push(p[2], q[2])
+          kept.push(i)
+        }
+        const r = nearestOnEdge2D(clientX, clientY, screen)
+        if (!r || r.distance >= EDGE_PICK_PX || (best && r.distance >= best.distance)) continue
+        const d0 = depths[r.segment * 2]
+        const d1 = depths[r.segment * 2 + 1]
+        const denom = (1 - r.t) * d1 + r.t * d0
+        const t3 = denom > 0 ? (r.t * d0) / denom : r.t
+        const o = kept[r.segment]
+        const px = e.seg[o] + (e.seg[o + 3] - e.seg[o]) * t3
+        const py = e.seg[o + 1] + (e.seg[o + 4] - e.seg[o + 1]) * t3
+        const pz = e.seg[o + 2] + (e.seg[o + 5] - e.seg[o + 2]) * t3
+        const depth = Math.hypot(px - eye.x, py - eye.y, pz - eye.z)
+        if (depth > limit + Math.max(1, limit * 0.01)) continue
+        best = { distance: r.distance, body, name: e.name }
+      }
+    }
+    if (!best) return null
+    const key = `edge:${best.name}`
+    let hint = best.body.hints.get(key)
+    if (!hint) {
+      const pts = best.body.data.edges.find((x) => x.name === best.name)?.points
+      hint = pts ? edgeHint(pts) : undefined
+      if (hint) best.body.hints.set(key, hint)
+    }
+    return { kind: 'edge', name: best.name, hint }
   }
 
   private updateHover(e: PointerEvent) {
@@ -791,6 +996,7 @@ export class ViewportEngine {
 
   /** Client (page) coordinates of a world point. */
   worldToClient(world: Vec3): [number, number] {
+    this.camera.updateMatrixWorld()
     const rect = this.canvas.getBoundingClientRect()
     const v = new THREE.Vector3(...world).project(this.camera)
     return [rect.left + ((v.x + 1) / 2) * rect.width, rect.top + ((1 - v.y) / 2) * rect.height]
@@ -989,7 +1195,7 @@ export class ViewportEngine {
       for (let i = 0; i + 2 < seg.length; i += 3) pts.push([seg[i], seg[i + 1], seg[i + 2]])
     }
     if (pts.length === 0) {
-      this.flyTo(new THREE.Vector3(0, 0, 0), n.clone().add(tilt), EMPTY_SKETCH_SPAN / 2 / tanV)
+      this.flyTo(new THREE.Vector3(...frame.origin), n.clone().add(tilt), EMPTY_SKETCH_SPAN / 2 / tanV)
       return
     }
     const lo: Vec2 = [Infinity, Infinity]
@@ -1098,6 +1304,7 @@ export class ViewportEngine {
     this.setRegions([])
     this.disposeChildren(this.sketchGroup)
     this.disposeChildren(this.marksGroup)
+    this.disposeChildren(this.edgeMarksGroup)
     this.setPreview(null, [], null)
     this.grid.traverse((o) => (o as THREE.Line).geometry?.dispose())
     this.planesGroup.traverse((o) => {
@@ -1106,7 +1313,8 @@ export class ViewportEngine {
         o.material.dispose()
       } else if (o instanceof THREE.LineLoop) o.geometry.dispose()
     })
-    this.planeMeshes.get('XY')?.geometry.dispose()
+    this.clearConstructionPlanes()
+    this.planeGeo.dispose()
     this.snapDot.geometry.dispose()
     this.dotTexture?.dispose()
     this.snapDotMat.dispose()

@@ -38,12 +38,13 @@ export function SketchLayer({ engine }: SketchLayerProps) {
 
   // Camera on entering a sketch: look straight at its plane; on leaving, back to the 3D view.
   const planeName = sketch?.params.on.name
+  const hasFrame = frame !== null
   useEffect(() => {
     if (sketchId && frame) engine.lookAtPlane(frame, sketch?.sketch.entities ?? [])
     else if (!sketchId) engine.leavePlaneView()
     // Only when a different sketch (or plane) opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine, sketchId, planeName])
+  }, [engine, sketchId, planeName, hasFrame])
 
   // Selection and drag listeners come first, so their Esc handling runs before the drawing tools'.
   useSelectDrag(engine, live, drawBusy)

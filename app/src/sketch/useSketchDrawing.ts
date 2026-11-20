@@ -3,21 +3,27 @@
 import { useEffect, useMemo } from 'react'
 import { useProjectStore } from '../doc/store'
 import { ORIGIN_PLANES } from '../doc/types'
-import type { PlaneFrame, SketchEntity, SketchFeature } from '../doc/types'
+import type { OriginPlaneName, PlaneFrame, SketchEntity, SketchFeature } from '../doc/types'
 import { useToolStore } from '../screens/workspace/toolStore'
 import type { ViewportEngine } from '../viewport/engine'
 import { refsOfSelection } from './pick'
 import { refEntityId } from './solver/refs'
 import { useSketchUi } from './sketchUi'
 
+function frameOf(f: SketchFeature | undefined, frames: Record<string, PlaneFrame>): PlaneFrame | null {
+  if (!f) return null
+  return f.params.on.kind === 'originPlane' ? (ORIGIN_PLANES[f.params.on.name as OriginPlaneName] ?? null) : (frames[f.id] ?? null)
+}
+
 export function useSketchFeature(): { sketchId: string | null; sketch: SketchFeature | undefined; frame: PlaneFrame | null } {
   const sketchId = useToolStore((s) => s.activeSketchId)
+  const sketchFrames = useToolStore((s) => s.sketchFrames)
   const features = useProjectStore((s) => s.doc.features)
   const sketch = useMemo(
     () => features.find((f): f is SketchFeature => f.id === sketchId && f.type === 'sketch'),
     [features, sketchId],
   )
-  const frame = sketch ? (ORIGIN_PLANES[sketch.params.on.name as keyof typeof ORIGIN_PLANES] ?? null) : null
+  const frame = frameOf(sketch, sketchFrames)
   return { sketchId, sketch, frame }
 }
 
@@ -30,6 +36,7 @@ export function useLiveEntities(sketch: SketchFeature | undefined): SketchEntity
 export function useSketchDrawing(engine: ViewportEngine, sketchId: string | null, tool: string | null) {
   const features = useProjectStore((s) => s.doc.features)
   const selection = useProjectStore((s) => s.selection)
+  const sketchFrames = useToolStore((s) => s.sketchFrames)
   const preview = useSketchUi((s) => s.preview)
   const defined = useSketchUi((s) => s.defined)
   const hoverRef = useSketchUi((s) => s.hoverRef)
@@ -38,10 +45,14 @@ export function useSketchDrawing(engine: ViewportEngine, sketchId: string | null
 
   useEffect(() => {
     const used = new Set<string>()
-    for (const f of features) if (f.type === 'extrude') for (const p of f.params.profiles) used.add(p.name.split('/region:')[0])
+    for (const f of features) {
+      if (f.type === 'extrude' || f.type === 'revolve') {
+        for (const p of f.params.profiles) used.add(p.name.split('/region:')[0])
+      }
+    }
     const groups = features.flatMap((f) => {
       if (f.type !== 'sketch' || f.suppressed) return []
-      const fr = ORIGIN_PLANES[f.params.on.name as keyof typeof ORIGIN_PLANES]
+      const fr = frameOf(f, sketchFrames)
       if (!fr) return []
       const active = f.id === sketchId
       if (!active && used.has(f.id)) return []
@@ -56,11 +67,11 @@ export function useSketchDrawing(engine: ViewportEngine, sketchId: string | null
       ]
     })
     engine.setSketches(groups)
-  }, [engine, features, sketchId, preview, defined])
+  }, [engine, features, sketchId, sketchFrames, preview, defined])
 
   useEffect(() => {
     const sk = features.find((f): f is SketchFeature => f.id === sketchId && f.type === 'sketch')
-    const fr = sk ? ORIGIN_PLANES[sk.params.on.name as keyof typeof ORIGIN_PLANES] : null
+    const fr = frameOf(sk, sketchFrames)
     if (!sk || !fr) {
       engine.setSketchMarks(null, [], [])
       return
@@ -83,7 +94,7 @@ export function useSketchDrawing(engine: ViewportEngine, sketchId: string | null
     if (hoverRef && !tool) addRefs(hover, [hoverRef])
     const pick = (ids: Set<string>) => [...ids].flatMap((i) => byId.get(i) ?? [])
     engine.setSketchMarks(fr, pick(hover), pick(selected))
-  }, [engine, features, sketchId, tool, selection, preview, hoverRef, hoverConstraintId, selectedConstraintIds])
+  }, [engine, features, sketchId, sketchFrames, tool, selection, preview, hoverRef, hoverConstraintId, selectedConstraintIds])
 
   useEffect(
     () => () => {

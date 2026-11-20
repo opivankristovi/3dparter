@@ -3,18 +3,40 @@ import { ArrowUpFromLine, Box, History, PenLine, Variable } from 'lucide-react'
 import { deleteFeature, renameFeature, setBodyVisible } from '../../doc/commands'
 import { useProjectStore } from '../../doc/store'
 import type { Feature } from '../../doc/types'
+import { handlePick } from '../../modeling/picking'
 import { ConstraintList } from '../../sketch/ConstraintList'
 import { ContextMenu } from '../../ui/ContextMenu'
 import { EmptyState } from '../../ui/EmptyState'
+import { ChamferIcon, CombineIcon, FilletIcon, MoveIcon, PlaneIcon, RevolveIcon, ShellIcon } from '../../ui/ModelIcons'
 import { Tree } from '../../ui/Tree'
 import type { TreeNode } from '../../ui/Tree'
+import { useToolStore } from './toolStore'
 
-export type FeatureStatuses = Record<string, { ok: boolean; message?: string }>
+export type FeatureStatuses = Record<string, { ok: boolean; message?: string; warning?: string }>
 
 const ic = { size: 16, strokeWidth: 1.75 } as const
 
 function featureIcon(type: Feature['type']) {
-  return type === 'sketch' ? <PenLine {...ic} /> : <ArrowUpFromLine {...ic} />
+  switch (type) {
+    case 'sketch':
+      return <PenLine {...ic} />
+    case 'extrude':
+      return <ArrowUpFromLine {...ic} />
+    case 'revolve':
+      return <RevolveIcon {...ic} />
+    case 'fillet':
+      return <FilletIcon {...ic} />
+    case 'chamfer':
+      return <ChamferIcon {...ic} />
+    case 'shell':
+      return <ShellIcon {...ic} />
+    case 'boolean':
+      return <CombineIcon {...ic} />
+    case 'transform':
+      return <MoveIcon {...ic} />
+    case 'plane':
+      return <PlaneIcon {...ic} />
+  }
 }
 
 export function HistoryTab({ statuses }: { statuses?: FeatureStatuses }) {
@@ -35,6 +57,7 @@ export function HistoryTab({ statuses }: { statuses?: FeatureStatuses }) {
           suppressed: f.suppressed,
           beyondRollback: rollbackIndex !== null && idx >= rollbackIndex,
           error: st && !st.ok ? (st.message ?? 'This step could not be built.') : undefined,
+          warning: st?.ok ? st.warning : undefined,
         }
       }),
     [features, statuses, rollbackIndex],
@@ -83,17 +106,24 @@ export function HistoryTab({ statuses }: { statuses?: FeatureStatuses }) {
 export function ItemsTab() {
   const bodies = useProjectStore((s) => s.doc.bodies)
   const selection = useProjectStore((s) => s.selection)
-  const setSelection = useProjectStore((s) => s.setSelection)
+  const liveBodies = useToolStore((s) => s.liveBodies)
 
   const nodes: TreeNode[] = useMemo(
     () =>
-      Object.entries(bodies).map(([id, b]) => ({
-        id,
-        label: b.name,
-        icon: <Box {...ic} />,
-        hidden: !b.visible,
-      })),
-    [bodies],
+      Object.entries(bodies)
+        .filter(([id]) => liveBodies === null || liveBodies.includes(id))
+        .map(([id, b]) => ({
+          id,
+          label: b.name,
+          icon: <Box {...ic} />,
+          hidden: !b.visible,
+        })),
+    [bodies, liveBodies],
+  )
+
+  const selectedIds = useMemo(
+    () => selection.filter((r) => r.kind === 'body').map((r) => r.name),
+    [selection],
   )
 
   if (nodes.length === 0) {
@@ -106,13 +136,12 @@ export function ItemsTab() {
     )
   }
 
-  const selected = selection.find((r) => r.kind === 'body')?.name
   return (
     <Tree
       label="Solids"
       nodes={nodes}
-      selectedId={selected}
-      onSelect={(id) => setSelection([{ kind: 'body', name: id }])}
+      selectedIds={selectedIds}
+      onSelect={(id) => handlePick({ kind: 'body', name: id }, false)}
       onToggleHidden={(id) => setBodyVisible(id, !bodies[id]?.visible)}
     />
   )

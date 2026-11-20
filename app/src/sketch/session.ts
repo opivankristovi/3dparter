@@ -1,12 +1,13 @@
 // Entering and leaving sketch mode. The sketch itself lives in the document; this only tracks which one is open.
 import { useProjectStore } from '../doc/store'
-import type { OriginPlaneName } from '../doc/types'
+import type { OriginPlaneName, PlaneFrame, Ref } from '../doc/types'
 import { useToolStore } from '../screens/workspace/toolStore'
 import { createSketch } from './commands'
 
-/** Creates a sketch on a plane (one undo step) and opens it. */
-export function startSketchOn(plane: OriginPlaneName): string {
+/** Creates a sketch on a plane or flat face (one undo step) and opens it. */
+export function startSketchOn(plane: OriginPlaneName | Ref, frame?: PlaneFrame): string {
   const id = createSketch(plane)
+  if (frame) useToolStore.getState().setSketchFrame(id, frame)
   enterSketch(id)
   return id
 }

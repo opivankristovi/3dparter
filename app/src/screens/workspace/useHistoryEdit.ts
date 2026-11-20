@@ -1,6 +1,7 @@
-// Clicking a History row opens that step for editing: a sketch re-enters sketch mode, an extrude opens its card.
+// Clicking a History row opens that step for editing: a sketch re-enters sketch mode, a modeling step opens its card.
 import { useEffect } from 'react'
 import { useProjectStore } from '../../doc/store'
+import { cloneForEdit, selectionForFeature, toolForFeature } from '../../modeling/logic'
 import { enterSketch } from '../../sketch/session'
 import { useToolStore } from './toolStore'
 
@@ -20,14 +21,14 @@ export function useHistoryEdit() {
         enterSketch(f.id)
         s.setActiveTool(null)
       }
-    } else if (f.type === 'extrude' && draft?.id !== f.id) {
+      return
+    }
+    const tool = toolForFeature(f.type)
+    if (tool && draft?.id !== f.id) {
       useToolStore.getState().setActiveSketch(null)
-      useToolStore.getState().setDraft(
-        { ...f, params: { ...f.params, profiles: [...f.params.profiles], targets: [...f.params.targets] } },
-        f.id,
-      )
-      s.setSelection(f.params.profiles)
-      s.setActiveTool('extrude')
+      useToolStore.getState().setDraft(cloneForEdit(f), f.id)
+      s.setSelection(selectionForFeature(f))
+      s.setActiveTool(tool)
     }
   }, [editingId, features, draft, activeSketchId])
 
