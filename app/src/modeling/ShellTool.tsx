@@ -98,6 +98,7 @@ export function useShellTool(kernel: KernelState): ShellToolResult {
       bodies={bodies}
       units={units}
       busy={kernel.busy}
+      isCurrent={kernel.isDraftCurrent}
       failure={status && !status.ok ? (status.message ?? 'This shape could not be hollowed.') : undefined}
       editingStep={stepIndex}
       onChange={change}
@@ -119,6 +120,7 @@ interface CardProps {
   bodies: Record<string, BodyAppearance>
   units: DisplayUnit
   busy: boolean
+  isCurrent: () => boolean
   failure?: string
   editingStep?: number
   onChange: (thickness: string) => void
@@ -133,6 +135,7 @@ function ShellCard({
   bodies,
   units,
   busy,
+  isCurrent,
   failure,
   editingStep,
   onChange,
@@ -151,6 +154,7 @@ function ShellCard({
       title="Shell"
       icon={<ShellIcon size={16} strokeWidth={1.75} />}
       busy={busy}
+      isCurrent={isCurrent}
       editingStep={editingStep}
       failure={noBody ? { message: 'Pick a solid or face to hollow out.' } : failure ? { message: failure } : undefined}
       applyDisabled={busy || length.invalid || noBody || !!failure}

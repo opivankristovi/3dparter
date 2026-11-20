@@ -1,5 +1,5 @@
 // The Extrude tool: picks a profile, previews the solid through a draft feature, and applies it as one undo step.
-import { useCallback, useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { ArrowUpFromLine } from 'lucide-react'
 import { newId, nextFeatureName } from '../doc/commands'
@@ -7,9 +7,10 @@ import { useProjectStore } from '../doc/store'
 import { ORIGIN_PLANES } from '../doc/types'
 import type { BodyAppearance, BooleanMode, DisplayUnit, ExtrudeFeature, OriginPlaneName, Ref, Vec3 } from '../doc/types'
 import { toExpr } from '../doc/units'
-import type { SketchRegionData } from '../kernel/api'
+import { getKernel } from '../kernel/client'
+import type { MeshData, SketchRegionData } from '../kernel/api'
 import { applyDraft, cancelDraft, changeDraft, useLengthInput } from '../modeling/draft'
-import { MODE_WORDS, sameSketchRegions, sketchOfRegion } from '../modeling/logic'
+import { MODE_WORDS, cutDirection, meshVolume, sameSketchRegions, sameVolume, sketchOfRegion } from '../modeling/logic'
 import { AxisDragHandle } from '../modeling/ModelHandles'
 import { extrudeTargetPool } from '../modeling/picking'
 import { useToolStore } from '../screens/workspace/toolStore'
@@ -43,6 +44,36 @@ function startDraft(profiles: Ref[]) {
     params: { profiles, distance: '10', direction: 1, mode: 'new', targets: [] },
   }
   useToolStore.getState().setDraft(f, null)
+}
+
+/**
+ * For a profile sketched on a face: which way a Cut or Intersect has to go to enter the solid (see cutDirection).
+ * null when the profile is not on a face or the kernel cannot tell.
+ */
+async function directionIntoSolid(profile: Ref | undefined): Promise<1 | -1 | null> {
+  if (!profile) return null
+  const sk = useProjectStore.getState().doc.features.find((f) => f.id === sketchOfRegion(profile))
+  if (sk?.type !== 'sketch' || sk.params.on.kind !== 'face') return null
+  try {
+    const kernel = getKernel()
+    const [sketchFrame, faceFrame] = await Promise.all([kernel.sketchFrame(sk.id), kernel.planeFrame(sk.params.on)])
+    return sketchFrame && faceFrame ? cutDirection(sketchFrame.normal, faceFrame.normal) : null
+  } catch {
+    return null
+  }
+}
+
+/** True when a Cut or Intersect preview left every target solid exactly as it was. */
+function leavesTargetsUnchanged(targets: Ref[], before: Map<string, MeshData>, after: Map<string, MeshData>): boolean {
+  return (
+    targets.length > 0 &&
+    targets.every((t) => {
+      const a = before.get(t.name)
+      const b = after.get(t.name)
+      if (!a || !b) return false
+      return a === b || sameVolume(meshVolume(a.positions, a.indices), meshVolume(b.positions, b.indices))
+    })
+  )
 }
 
 function regionCenter(region: SketchRegionData): Vec3 {
@@ -119,7 +150,23 @@ export function useExtrudeTool(kernel: KernelState, engine: ViewportEngine | nul
 
   const change = useCallback((partial: Partial<ExtrudeFeature['params']>) => changeDraft<ExtrudeFeature>('extrude', partial), [])
 
+  // The solids as they were before the open draft touched them: what a Cut or Intersect preview is compared with.
+  // While editing an existing step the committed meshes already include its effect, so there is no baseline until
+  // the draft has been seen in the New mode.
+  const baseline = useRef<{ meshes: Map<string, MeshData>; draftId: string | null }>({ meshes: new Map(), draftId: null })
+  if (!extrude) baseline.current = { meshes: kernel.meshes, draftId: null }
+  else if (extrude.params.mode === 'new') baseline.current = { meshes: kernel.meshes, draftId: extrude.id }
+  const baselineKnown = !!extrude && (!draftReplaces || baseline.current.draftId === extrude.id)
+
   const status = extrude ? kernel.statuses[extrude.id] : undefined
+  const noEffect =
+    !!extrude &&
+    (extrude.params.mode === 'subtract' || extrude.params.mode === 'intersect') &&
+    baselineKnown &&
+    !kernel.busy &&
+    status?.ok === true &&
+    kernel.isDraftCurrent() &&
+    leavesTargetsUnchanged(extrude.params.targets, baseline.current.meshes, kernel.meshes)
   const stepIndex = draftReplaces ? features.findIndex((f) => f.id === draftReplaces) + 1 : undefined
 
   const handleInfo = useMemo(() => {
@@ -168,7 +215,9 @@ export function useExtrudeTool(kernel: KernelState, engine: ViewportEngine | nul
       bodies={bodies}
       units={units}
       busy={kernel.busy}
+      isCurrent={kernel.isDraftCurrent}
       failure={status && !status.ok ? (status.message ?? 'This shape could not be built.') : undefined}
+      noEffect={noEffect}
       editingStep={stepIndex}
       onChange={change}
       onApply={applyExtrude}
@@ -187,32 +236,43 @@ interface CardProps {
   bodies: Record<string, BodyAppearance>
   units: DisplayUnit
   busy: boolean
+  isCurrent: () => boolean
   failure?: string
+  /** A Cut or Intersect that leaves the solid unchanged. */
+  noEffect: boolean
   editingStep?: number
   onChange: (partial: Partial<ExtrudeFeature['params']>) => void
   onApply: () => void
   onCancel: () => void
 }
 
-function ExtrudeCard({ draft, bodies, units, busy, failure, editingStep, onChange, onApply, onCancel }: CardProps) {
+function ExtrudeCard({ draft, bodies, units, busy, isCurrent, failure, noEffect, editingStep, onChange, onApply, onCancel }: CardProps) {
   const p = draft.params
   const length = useLengthInput(p.distance, units, (distance) => onChange({ distance }))
   const noProfile = p.profiles.length === 0
+  /** The direction was flipped by the card (not by the user) when the operation became Cut or Intersect. */
+  const autoFlipped = useRef(false)
   const noTargets = p.mode !== 'new' && p.targets.length === 0
   const missing = noProfile
     ? 'Pick a shape to extrude.'
     : noTargets
       ? 'Pick at least one solid to work on.'
       : undefined
+  const note = noEffect
+    ? p.mode === 'subtract'
+      ? 'This cut does not reach the solid. Try Flip.'
+      : 'The result is the same solid. Try Flip or another distance.'
+    : undefined
 
   return (
     <ParameterCard
       title="Extrude"
       icon={<ArrowUpFromLine size={16} strokeWidth={1.75} />}
       busy={busy}
+      isCurrent={isCurrent}
       editingStep={editingStep}
-      failure={missing ? { message: missing } : failure ? { message: failure } : undefined}
-      applyDisabled={busy || length.invalid || noProfile || noTargets || !!failure}
+      failure={missing ? { message: missing } : failure ? { message: failure } : note ? { message: note } : undefined}
+      applyDisabled={busy || length.invalid || noProfile || noTargets || !!failure || noEffect}
       onApply={length.guard(onApply)}
       onCancel={onCancel}
     >
@@ -237,6 +297,20 @@ function ExtrudeCard({ draft, bodies, units, busy, failure, editingStep, onChang
             const mode = v as BooleanMode
             const targets = mode === 'new' ? [] : p.targets.length > 0 ? p.targets : extrudeTargetPool(draft.id)
             onChange({ mode, targets })
+            const into = mode === 'subtract' || mode === 'intersect'
+            if (into && !(p.mode === 'subtract' || p.mode === 'intersect') && p.direction === 1) {
+              // A profile on a face points out of the solid: a cut that way removes nothing, so start into the solid.
+              void directionIntoSolid(p.profiles[0]).then((dir) => {
+                const cur = useToolStore.getState().draft
+                if (dir === -1 && cur?.type === 'extrude' && cur.id === draft.id && cur.params.direction === 1 && cur.params.mode === mode) {
+                  autoFlipped.current = true
+                  onChange({ direction: -1 })
+                }
+              })
+            } else if (!into && autoFlipped.current) {
+              autoFlipped.current = false
+              if (p.direction === -1) onChange({ direction: 1 })
+            }
           }}
           options={(Object.keys(MODE_WORDS) as BooleanMode[]).map((k) => ({ value: k, label: MODE_WORDS[k] }))}
         />

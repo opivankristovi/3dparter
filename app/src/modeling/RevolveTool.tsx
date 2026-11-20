@@ -149,6 +149,7 @@ export function useRevolveTool(kernel: KernelState): RevolveToolResult {
       bodies={bodies}
       lineChoices={lineChoices}
       busy={kernel.busy}
+      isCurrent={kernel.isDraftCurrent}
       failure={status && !status.ok ? (status.message ?? 'This shape could not be built.') : undefined}
       editingStep={stepIndex}
       onChange={change}
@@ -168,6 +169,7 @@ interface CardProps {
   bodies: Record<string, BodyAppearance>
   lineChoices: AxisChoice[]
   busy: boolean
+  isCurrent: () => boolean
   failure?: string
   editingStep?: number
   onChange: (partial: Partial<RevolveFeature['params']>) => void
@@ -175,7 +177,7 @@ interface CardProps {
   onCancel: () => void
 }
 
-function RevolveCard({ draft, bodies, lineChoices, busy, failure, editingStep, onChange, onApply, onCancel }: CardProps) {
+function RevolveCard({ draft, bodies, lineChoices, busy, isCurrent, failure, editingStep, onChange, onApply, onCancel }: CardProps) {
   const p = draft.params
   const angle = useAngleInput(p.angle, (a) => onChange({ angle: a }), { positiveMax360: true })
   const noProfile = p.profiles.length === 0
@@ -196,6 +198,7 @@ function RevolveCard({ draft, bodies, lineChoices, busy, failure, editingStep, o
       title="Revolve"
       icon={<RevolveIcon size={16} strokeWidth={1.75} />}
       busy={busy}
+      isCurrent={isCurrent}
       editingStep={editingStep}
       failure={missing ? { message: missing } : failure ? { message: failure } : undefined}
       applyDisabled={busy || angle.invalid || noProfile || noAxis || noTargets || !!failure}

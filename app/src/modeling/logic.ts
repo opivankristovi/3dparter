@@ -1,6 +1,6 @@
 // Pure rules shared by the modelling tools: which references a tool takes, how a click toggles them, and what the
 // Join / Cut / Intersect words mean in the document. No React, no store: unit tested on their own.
-import type { BodyAppearance, BooleanFeature, BooleanMode, Feature, Ref } from '../doc/types'
+import type { BodyAppearance, BooleanFeature, BooleanMode, Feature, Ref, Vec3 } from '../doc/types'
 
 /** The words for the three ways of combining solids, the same in the Extrude and Combine cards. */
 export const OP_WORDS = { union: 'Join', subtract: 'Cut', intersect: 'Intersect' } as const
@@ -190,4 +190,34 @@ export function selectionForFeature(f: Feature): Ref[] {
     default:
       return []
   }
+}
+
+/** Volume of a closed triangle mesh (positions xyz per vertex, three indices per triangle), in mm^3. */
+export function meshVolume(positions: ArrayLike<number>, indices: ArrayLike<number>): number {
+  let sum = 0
+  for (let t = 0; t + 2 < indices.length; t += 3) {
+    const a = indices[t] * 3
+    const b = indices[t + 1] * 3
+    const c = indices[t + 2] * 3
+    sum +=
+      positions[a] * (positions[b + 1] * positions[c + 2] - positions[b + 2] * positions[c + 1]) -
+      positions[a + 1] * (positions[b] * positions[c + 2] - positions[b + 2] * positions[c]) +
+      positions[a + 2] * (positions[b] * positions[c + 1] - positions[b + 1] * positions[c])
+  }
+  return sum / 6
+}
+
+/** Two volumes that differ only by rounding noise. */
+export function sameVolume(a: number, b: number): boolean {
+  return Math.abs(a - b) <= 1e-6 * Math.max(1, Math.abs(a), Math.abs(b))
+}
+
+/**
+ * Which way a Cut should go for a profile sketched on a face. The face's outward normal points away from the solid,
+ * so a sketch plane facing the same way would cut nothing: go the other way (-1, "Flip"). A sketch plane that
+ * already faces into the solid keeps the normal direction (1).
+ */
+export function cutDirection(sketchNormal: Vec3, faceOutward: Vec3): 1 | -1 {
+  const dot = sketchNormal[0] * faceOutward[0] + sketchNormal[1] * faceOutward[1] + sketchNormal[2] * faceOutward[2]
+  return dot > 0 ? -1 : 1
 }

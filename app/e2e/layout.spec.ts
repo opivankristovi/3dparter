@@ -83,7 +83,8 @@ test.describe('desktop layout', () => {
     await waitCameraStable(page)
     const [x0, y0] = await clientOf(page, [0, 0, 0])
     const [x1, y1] = await clientOf(page, [40, 0, 0])
-    expect(Math.hypot(x1 - x0, y1 - y0), 'the 40 mm side spans at least 450 px').toBeGreaterThan(450)
+    // The sketch is framed in the part of the view the panels leave free (about 900 of 1440 px), not the whole canvas.
+    expect(Math.hypot(x1 - x0, y1 - y0), 'the 40 mm side spans at least 340 px').toBeGreaterThan(340)
     expect(x1, 'and stays clear of the side panels').toBeLessThan(1040)
     await page.getByRole('button', { name: 'Finish sketch' }).click()
     await waitCameraStable(page)

@@ -142,6 +142,7 @@ export function useTransformTool(kernel: KernelState, engine: ViewportEngine | n
       bodies={bodies}
       units={units}
       busy={kernel.busy}
+      isCurrent={kernel.isDraftCurrent}
       failure={status && !status.ok ? (status.message ?? 'These solids could not be moved.') : undefined}
       editingStep={stepIndex}
       onChange={change}
@@ -164,6 +165,7 @@ interface CardProps {
   bodies: Record<string, BodyAppearance>
   units: DisplayUnit
   busy: boolean
+  isCurrent: () => boolean
   failure?: string
   editingStep?: number
   onChange: (partial: Partial<TransformFeature['params']>) => void
@@ -177,6 +179,7 @@ function TransformCard({
   bodies,
   units,
   busy,
+  isCurrent,
   failure,
   editingStep,
   onChange,
@@ -207,6 +210,7 @@ function TransformCard({
       title="Move"
       icon={<MoveIcon size={16} strokeWidth={1.75} />}
       busy={busy}
+      isCurrent={isCurrent}
       editingStep={editingStep}
       failure={noBodies ? { message: 'Pick at least one solid to move.' } : failure ? { message: failure } : undefined}
       applyDisabled={busy || anyInvalid || noBodies || !!failure}

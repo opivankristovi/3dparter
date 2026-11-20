@@ -93,6 +93,7 @@ export function useEdgeBlendTool(kind: BlendKind, kernel: KernelState): EdgeBlen
       draft={blend}
       units={units}
       busy={kernel.busy}
+      isCurrent={kernel.isDraftCurrent}
       failure={status && !status.ok ? (status.message ?? 'This shape could not be built.') : undefined}
       editingStep={stepIndex}
       onChange={change}
@@ -113,6 +114,7 @@ interface CardProps {
   draft: Blend
   units: DisplayUnit
   busy: boolean
+  isCurrent: () => boolean
   failure?: string
   editingStep?: number
   onChange: (expr: string) => void
@@ -121,7 +123,7 @@ interface CardProps {
   onCancel: () => void
 }
 
-function EdgeBlendCard({ kind, draft, units, busy, failure, editingStep, onChange, onClearEdges, onApply, onCancel }: CardProps) {
+function EdgeBlendCard({ kind, draft, units, busy, isCurrent, failure, editingStep, onChange, onClearEdges, onApply, onCancel }: CardProps) {
   const cfg = CONFIG[kind]
   const length = useLengthInput(paramOf(draft), units, onChange)
   const edges = draft.params.edges
@@ -132,6 +134,7 @@ function EdgeBlendCard({ kind, draft, units, busy, failure, editingStep, onChang
       title={cfg.title}
       icon={kind === 'fillet' ? <FilletIcon size={16} strokeWidth={1.75} /> : <ChamferIcon size={16} strokeWidth={1.75} />}
       busy={busy}
+      isCurrent={isCurrent}
       editingStep={editingStep}
       failure={noEdges ? { message: cfg.noEdges } : failure ? { message: failure } : undefined}
       applyDisabled={busy || length.invalid || noEdges || !!failure}

@@ -29,6 +29,7 @@ import type { FeatureStatuses } from './workspace/SidebarTabs'
 import { useToolStore } from './workspace/toolStore'
 import { ALL_TOOLS, TOOL_KEYS, WorkspaceToolRail } from './workspace/WorkspaceToolRail'
 import { useBreakpoints, useSaveOnLeave, useWorkspaceHotkeys } from './workspace/hooks'
+import { useCoverInsets } from './workspace/useCoverInsets'
 
 export interface WorkspaceProps {
   /** The 3D viewport, mounted inside the full-bleed host behind the panels. */
@@ -141,6 +142,7 @@ function Shell({
   useWorkspaceHotkeys(TOOL_KEYS)
   useSaveOnLeave()
   useCommandPaletteHotkey(() => setPaletteOpen(true))
+  useCoverInsets(view?.engine ?? null)
 
   const commands: Command[] = useMemo(
     () => [
@@ -212,7 +214,7 @@ function Shell({
         {viewport}
       </main>
 
-      <div className="absolute inset-x-2 top-2 z-10">
+      <div data-cover="top" className="absolute inset-x-2 top-2 z-10">
         <TopBar
           projectName={name}
           onRename={(n) => void rename(n)}
@@ -273,11 +275,12 @@ function Shell({
         <>
           <aside
             aria-label="Project panels"
+            data-cover="right"
             className={cn('absolute right-[calc(var(--layout-viewcol-w)+1rem)] bottom-2 z-10 flex', BELOW_TOPBAR)}
           >
             {sidebar}
           </aside>
-          <nav aria-label="View" className={cn('absolute right-2 z-10', BELOW_TOPBAR)}>
+          <nav aria-label="View" data-cover="right" className={cn('absolute right-2 z-10', BELOW_TOPBAR)}>
             <ViewColumn
               engine={view?.engine ?? null}
               onFit={view?.onFit ?? (() => {})}
@@ -291,7 +294,7 @@ function Shell({
           </nav>
         </>
       ) : drawerOpen ? (
-        <aside aria-label="Project panels" className={cn('absolute right-2 z-20 flex', BELOW_TOPBAR, tablet ? 'bottom-2' : 'bottom-30')}>
+        <aside aria-label="Project panels" data-cover="right" className={cn('absolute right-2 z-20 flex', BELOW_TOPBAR, tablet ? 'bottom-2' : 'bottom-30')}>
           {sidebar}
         </aside>
       ) : null}

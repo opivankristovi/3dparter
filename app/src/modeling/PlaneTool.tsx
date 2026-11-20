@@ -146,6 +146,7 @@ export function usePlaneTool(kernel: KernelState, engine: ViewportEngine | null)
       draft={plane}
       units={units}
       busy={kernel.busy}
+      isCurrent={kernel.isDraftCurrent}
       failure={status && !status.ok ? (status.message ?? 'This plane could not be built.') : undefined}
       editingStep={stepIndex}
       onChange={change}
@@ -165,6 +166,7 @@ interface CardProps {
   draft: PlaneFeature
   units: DisplayUnit
   busy: boolean
+  isCurrent: () => boolean
   failure?: string
   editingStep?: number
   onChange: (partial: Partial<PlaneFeature['params']>) => void
@@ -173,7 +175,7 @@ interface CardProps {
   onCancel: () => void
 }
 
-function PlaneCard({ draft, units, busy, failure, editingStep, onChange, onPickOrigin, onApply, onCancel }: CardProps) {
+function PlaneCard({ draft, units, busy, isCurrent, failure, editingStep, onChange, onPickOrigin, onApply, onCancel }: CardProps) {
   const p = draft.params
   const offset = useSignedLengthInput(p.offset, units, (v) => onChange({ offset: v }))
   const angle = useAngleInput(p.angle, (a) => onChange({ angle: a }))
@@ -185,6 +187,7 @@ function PlaneCard({ draft, units, busy, failure, editingStep, onChange, onPickO
       title="Plane"
       icon={<PlaneIcon size={16} strokeWidth={1.75} />}
       busy={busy}
+      isCurrent={isCurrent}
       editingStep={editingStep}
       failure={noBase ? { message: 'Pick a plane or flat face.' } : failure ? { message: failure } : undefined}
       applyDisabled={busy || offset.invalid || angle.invalid || noBase || !!failure}

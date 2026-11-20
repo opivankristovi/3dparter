@@ -16,7 +16,10 @@ import {
   combineSelection,
   countLabel,
   defaultTargets,
+  cutDirection,
   isPreviewable,
+  meshVolume,
+  sameVolume,
   newCombine,
   sameRefSet,
   sameSketchRegions,
@@ -236,5 +239,38 @@ describe('editing a step', () => {
       params: { body: body('e'), removeFaces: [], thickness: '2' },
     }
     expect(selectionForFeature(sh)).toEqual([body('e')])
+  })
+})
+
+/** A closed axis-aligned box as a triangle mesh (12 triangles), corners at 0 and (x, y, z). */
+function boxMesh(x: number, y: number, z: number) {
+  const positions = [0, 0, 0, x, 0, 0, x, y, 0, 0, y, 0, 0, 0, z, x, 0, z, x, y, z, 0, y, z]
+  const indices = [
+    0, 2, 1, 0, 3, 2, // bottom
+    4, 5, 6, 4, 6, 7, // top
+    0, 1, 5, 0, 5, 4, // front
+    1, 2, 6, 1, 6, 5, // right
+    2, 3, 7, 2, 7, 6, // back
+    3, 0, 4, 3, 4, 7, // left
+  ]
+  return { positions, indices }
+}
+
+describe('cut direction and no-effect check (BUG-015)', () => {
+  it('measures the volume of a closed mesh', () => {
+    const m = boxMesh(40, 20, 10)
+    expect(meshVolume(m.positions, m.indices)).toBeCloseTo(8000, 6)
+  })
+
+  it('treats equal volumes as the same and a drilled one as different', () => {
+    expect(sameVolume(8000, 8000)).toBe(true)
+    expect(sameVolume(8000, 8000 + 1e-9)).toBe(true)
+    expect(sameVolume(8000, 8000 - 282.7)).toBe(false)
+  })
+
+  it('cuts opposite to a sketch plane that faces out of the solid', () => {
+    expect(cutDirection([0, 0, 1], [0, 0, 1])).toBe(-1) // sketch normal along the outward normal: cut into the solid
+    expect(cutDirection([0, 0, -1], [0, 0, 1])).toBe(1) // sketch normal already points into the solid
+    expect(cutDirection([0, 0, 1], [0, 0.0001, 1])).toBe(-1)
   })
 })

@@ -51,6 +51,14 @@ function readPalette(): Palette {
 }
 
 /** What the pointer can pick right now. */
+/** How far panels cover each edge of the canvas, in CSS px. */
+export interface ScreenInsets {
+  left: number
+  right: number
+  top: number
+  bottom: number
+}
+
 export interface PickMode {
   bodies: boolean
   planes: boolean
@@ -441,7 +449,53 @@ export class ViewportEngine {
     for (const m of this.wideMats()) m.resolution.set(w, h)
     this.camera.aspect = w / h
     this.camera.updateProjectionMatrix()
+    this.applyViewOffset()
     this.requestRender()
+  }
+
+  /**
+   * Tells the engine how much of the canvas edges panels cover (CSS px). The model's centre (the orbit target) is
+   * then drawn in the middle of the uncovered part, and framing fits into that part.
+   */
+  setScreenInsets(insets: ScreenInsets) {
+    const a = this.insets
+    if (a.left === insets.left && a.right === insets.right && a.top === insets.top && a.bottom === insets.bottom) return
+    this.insets = { ...insets }
+    this.applyViewOffset()
+    this.requestRender()
+  }
+
+  private insets: ScreenInsets = { left: 0, right: 0, top: 0, bottom: 0 }
+
+  /** The part of the canvas the panels leave free, in CSS px. Never smaller than a quarter of the canvas. */
+  private freeSize(): { w: number; h: number } {
+    const w = this.canvas.clientWidth || 1
+    const h = this.canvas.clientHeight || 1
+    const { left, right, top, bottom } = this.insets
+    return { w: Math.max(w / 4, w - left - right), h: Math.max(h / 4, h - top - bottom) }
+  }
+
+  /** Shifts the projection so the orbit target lands in the middle of the uncovered rectangle. */
+  private applyViewOffset() {
+    const w = this.canvas.clientWidth
+    const h = this.canvas.clientHeight
+    if (w === 0 || h === 0) return
+    const free = this.freeSize()
+    // The target projects to the canvas centre; it should land at the centre of the free rectangle instead.
+    const dx = (w - free.w) / 2 - this.insets.left
+    const dy = (h - free.h) / 2 - this.insets.top
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) this.camera.clearViewOffset()
+    else this.camera.setViewOffset(w, h, dx, dy, w, h)
+    this.camera.updateProjectionMatrix()
+  }
+
+  /** Half-angle tangents (vertical, horizontal) of the part of the view the panels leave free. */
+  private freeTans(): { tanV: number; tanH: number } {
+    const w = this.canvas.clientWidth || 1
+    const h = this.canvas.clientHeight || 1
+    const free = this.freeSize()
+    const tanV = Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2)
+    return { tanV: (tanV * free.h) / h, tanH: (tanV * this.camera.aspect * free.w) / w }
   }
 
   /** Every screen-space-width line material (they all need the canvas size). */
@@ -1187,8 +1241,7 @@ export class ViewportEngine {
     // A tiny tilt so "up" stays defined when looking along the world Z axis.
     const tilt = Math.abs(n.z) > 0.99 ? new THREE.Vector3(0, -0.001, 0) : new THREE.Vector3(0, 0, 0)
 
-    const tanV = Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2)
-    const tanH = tanV * this.camera.aspect
+    const { tanV, tanH } = this.freeTans()
     const pts: Vec3[] = []
     for (const e of geometry) {
       const seg = entitySegments(e, frame)
@@ -1242,9 +1295,9 @@ export class ViewportEngine {
     }
     const b = new THREE.Box3(new THREE.Vector3(...box.min), new THREE.Vector3(...box.max))
     const sphere = b.getBoundingSphere(new THREE.Sphere())
-    const vfov = THREE.MathUtils.degToRad(this.camera.fov)
-    const hfov = 2 * Math.atan(Math.tan(vfov / 2) * this.camera.aspect)
-    const dist = (Math.max(sphere.radius, 1) / Math.sin(Math.min(vfov, hfov) / 2)) * 1.15
+    // Fit inside the part of the view the panels leave free (the target is drawn in its middle).
+    const { tanV, tanH } = this.freeTans()
+    const dist = (Math.max(sphere.radius, 1) / Math.sin(Math.atan(Math.min(tanV, tanH)))) * 1.15
     const dir = this.camera.position.clone().sub(this.controls.target).normalize()
     this.flyTo(sphere.center, dir, dist)
   }

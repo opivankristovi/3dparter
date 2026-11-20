@@ -67,6 +67,7 @@ export function useCombineTool(kernel: KernelState): CombineToolResult {
       draft={combine}
       bodies={bodies}
       busy={kernel.busy}
+      isCurrent={kernel.isDraftCurrent}
       failure={status && !status.ok ? (status.message ?? 'These solids could not be combined.') : undefined}
       editingStep={stepIndex}
       onChange={(p) => changeDraft<BooleanFeature>('boolean', p)}
@@ -86,6 +87,7 @@ interface CardProps {
   draft: BooleanFeature
   bodies: Record<string, BodyAppearance>
   busy: boolean
+  isCurrent: () => boolean
   failure?: string
   editingStep?: number
   onChange: (partial: Partial<BooleanFeature['params']>) => void
@@ -94,7 +96,7 @@ interface CardProps {
   onCancel: () => void
 }
 
-function CombineCard({ draft, bodies, busy, failure, editingStep, onChange, onRemove, onApply, onCancel }: CardProps) {
+function CombineCard({ draft, bodies, busy, isCurrent, failure, editingStep, onChange, onRemove, onApply, onCancel }: CardProps) {
   const p = draft.params
   const nameOf = (r: Ref) => bodies[r.name]?.name ?? r.name
   const noTarget = p.target.name === ''
@@ -106,6 +108,7 @@ function CombineCard({ draft, bodies, busy, failure, editingStep, onChange, onRe
       title="Combine"
       icon={<CombineIcon size={16} strokeWidth={1.75} />}
       busy={busy}
+      isCurrent={isCurrent}
       editingStep={editingStep}
       failure={missing ? { message: missing } : failure ? { message: failure } : undefined}
       applyDisabled={busy || !!missing || !!failure}

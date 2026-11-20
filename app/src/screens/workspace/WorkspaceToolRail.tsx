@@ -69,6 +69,7 @@ export function WorkspaceToolRail({ activeTool, onToolChange, orientation, label
   )
   return (
     <div
+      data-cover={vertical ? 'left' : 'bottom'}
       className={cn(
         'bg-surface-raised shadow-panel',
         vertical

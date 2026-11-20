@@ -1,12 +1,13 @@
 // On-model drag handles and the 3-axis move gizmo, projected over the canvas with ViewportEngine.
 // Pure tokens; keyboard-accessible (arrow keys nudge the value).
-import { useMemo, useRef } from 'react'
+import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent } from 'react'
 import type { DisplayUnit, Ref, Vec3 } from '../doc/types'
 import { formatDisplay } from '../doc/units'
 import type { MeshData } from '../kernel/api'
 import { useViewSync } from '../sketch/useViewSync'
 import { cn } from '../ui/cn'
+import { layoutPx } from '../ui/layout'
 import type { ViewportEngine } from '../viewport/engine'
 
 export interface AxisDragHandleProps {
@@ -33,6 +34,18 @@ const TONE_STROKE = {
   z: 'stroke-axis-z',
 } as const
 
+const TONE_FILL = {
+  accent: 'fill-accent',
+  x: 'fill-axis-x',
+  y: 'fill-axis-y',
+  z: 'fill-axis-z',
+} as const
+
+/** Screen sizes of a move-gizmo arrow, from the layout tokens (px). */
+const GIZMO_ARROW_PX = () => layoutPx('gizmo-arrow', 90)
+const GIZMO_HEAD_PX = () => layoutPx('gizmo-head', 10)
+const GIZMO_GAP_PX = () => layoutPx('gizmo-gap', 8)
+
 const TONE_DOT = {
   accent: 'bg-accent',
   x: 'bg-axis-x',
@@ -52,6 +65,15 @@ function unitVec(v: Vec3): Vec3 {
 
 function addScaled(o: Vec3, d: Vec3, s: number): Vec3 {
   return [o[0] + d[0] * s, o[1] + d[1] * s, o[2] + d[2] * s]
+}
+
+/** Triangle with its point at `tip`, opening backwards along the unit direction `d`. */
+function arrowHead(tip: [number, number], d: [number, number], size: number): string {
+  const bx = tip[0] - d[0] * size
+  const by = tip[1] - d[1] * size
+  const hx = (-d[1] * size) / 2
+  const hy = (d[0] * size) / 2
+  return `${tip[0]},${tip[1]} ${bx + hx},${by + hy} ${bx - hx},${by - hy}`
 }
 
 function AxisDragHandleInner({
@@ -85,25 +107,47 @@ function AxisDragHandleInner({
     return [cx - rect.left, cy - rect.top]
   }
 
+  const chip = useRef<HTMLButtonElement>(null)
+  const [chipSize, setChipSize] = useState<[number, number]>([0, 0])
+  useLayoutEffect(() => {
+    const el = chip.current
+    if (el && (el.offsetWidth !== chipSize[0] || el.offsetHeight !== chipSize[1])) setChipSize([el.offsetWidth, el.offsetHeight])
+  })
+
   const ppm = engine.pixelsPerMmAt(origin)
   const fallbackMm = 40 / Math.max(0.15, ppm)
   const tipMm = fixedShaft ? fallbackMm : Math.abs(value) < 1e-3 ? fallbackMm : value * scale
 
   const base = toOverlay(origin)
   let tip = toOverlay(addScaled(origin, u, tipMm))
+  /** Screen direction of the arrow (unit), used by the fixed-length gizmo arrow. */
+  let screenDir: [number, number] = [0, -1]
+  /** Where the value chip sits: on the tip, or for a fixed arrow just beyond it. */
+  let chipAt = tip
 
   // Keep the handle away from the exact base pixel if the extrusion is very thin on screen.
   const dx = tip[0] - base[0]
   const dy = tip[1] - base[1]
   const distPx = Math.hypot(dx, dy)
-  if (!fixedShaft && distPx > 0.5 && distPx < 24) {
-    const k = 24 / distPx
-    tip = [base[0] + dx * k, base[1] + dy * k]
+  if (fixedShaft) {
+    // A fixed-length arrow in the axis colour; the chip goes past the tip, pushed out along the arrow by half its
+    // own size in that direction plus a gap, so neighbouring axes cannot sit on each other or on the shafts.
+    if (distPx > 1e-3) screenDir = [dx / distPx, dy / distPx]
+    const len = GIZMO_ARROW_PX()
+    tip = [base[0] + screenDir[0] * len, base[1] + screenDir[1] * len]
+    const reach = (Math.abs(screenDir[0]) * chipSize[0] + Math.abs(screenDir[1]) * chipSize[1]) / 2 + GIZMO_GAP_PX()
+    chipAt = [tip[0] + screenDir[0] * reach, tip[1] + screenDir[1] * reach]
+  } else {
+    if (distPx > 0.5 && distPx < 24) {
+      const k = 24 / distPx
+      tip = [base[0] + dx * k, base[1] + dy * k]
+    }
+    chipAt = tip
   }
 
   // Skip handles projected off canvas.
   const inBounds =
-    tip[0] >= -40 && tip[0] <= rect.width + 40 && tip[1] >= -40 && tip[1] <= rect.height + 40
+    chipAt[0] >= -40 && chipAt[0] <= rect.width + 40 && chipAt[1] >= -40 && chipAt[1] <= rect.height + 40
 
   const commitValue = (raw: number) => {
     const clamped = min !== undefined ? Math.max(min, raw) : raw
@@ -177,9 +221,16 @@ function AxisDragHandleInner({
           className={cn(TONE_STROKE[tone], 'stroke-[2.5]')}
           strokeLinecap="round"
         />
+        {fixedShaft ? (
+          <polygon
+            points={arrowHead(tip, screenDir, GIZMO_HEAD_PX())}
+            className={TONE_FILL[tone]}
+          />
+        ) : null}
         <circle cx={base[0]} cy={base[1]} r={3} className="fill-surface-raised stroke-border stroke-[1.5]" />
       </svg>
       <button
+        ref={chip}
         type="button"
         title={label}
         onPointerDown={onPointerDown}
@@ -188,7 +239,7 @@ function AxisDragHandleInner({
         onPointerCancel={onPointerUp}
         onClick={(e) => e.stopPropagation()}
         onKeyDown={onKeyDown}
-        style={{ left: tip[0], top: tip[1] }}
+        style={{ left: chipAt[0], top: chipAt[1] }}
         className="pointer-events-auto absolute inline-flex h-7 -translate-x-1/2 -translate-y-1/2 cursor-grab items-center gap-1.5 rounded-pill border border-border bg-surface-raised px-2 text-xs font-medium text-text shadow-panel select-none active:cursor-grabbing hover:border-text-muted focus-visible:outline-2 focus-visible:outline-focus tnum"
       >
         <span aria-hidden="true" className={cn('size-2 rounded-pill', TONE_DOT[tone])} />

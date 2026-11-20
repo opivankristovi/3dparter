@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { Button } from './Button'
@@ -24,6 +24,11 @@ export interface ParameterCardProps {
   applyDisabled?: boolean
   /** Thin progress line under the header while the kernel works. */
   busy?: boolean
+  /**
+   * True when the preview on screen is for what the card holds right now. Enter right after typing a value waits
+   * for this before it applies. Leave out for a card that has no preview to wait for.
+   */
+  isCurrent?: () => boolean
   /** Operation failed: kernel message plus a hint. */
   failure?: { message: string; hint?: string }
   /** "Editing step 7" badge. */
@@ -40,7 +45,7 @@ function ActionKey({ children }: { children: string }) {
   )
 }
 
-/** Non-modal dialog. Focus goes to the first field on open; Esc cancels; Enter in the last field applies. */
+/** Non-modal dialog. Focus goes to the first field on open; Esc cancels; Enter in any text field applies. */
 export function ParameterCard({
   title,
   icon,
@@ -49,12 +54,27 @@ export function ParameterCard({
   onCancel,
   applyDisabled,
   busy,
+  isCurrent,
   failure,
   editingStep,
   className,
 }: ParameterCardProps) {
   const titleId = useId()
   const body = useRef<HTMLDivElement>(null)
+  /** Enter was pressed and the apply is waiting for the preview of what was typed. */
+  const [queued, setQueued] = useState(false)
+  const latest = useRef({ onApply, isCurrent })
+  latest.current = { onApply, isCurrent }
+
+  // Enter commits the field first (the field's own handler runs before this card's), which starts a new preview.
+  // The props of this render are still the old ones, so the apply runs from here once the preview has caught up:
+  // by then `busy`, `applyDisabled` and any failure describe the value that was typed.
+  useEffect(() => {
+    if (!queued || busy) return
+    if (latest.current.isCurrent && !latest.current.isCurrent()) return
+    setQueued(false)
+    if (!applyDisabled) latest.current.onApply()
+  }, [queued, busy, applyDisabled])
 
   useEffect(() => {
     // The first field, or else the first button.
@@ -66,9 +86,10 @@ export function ParameterCard({
     if (e.key === 'Escape') {
       e.stopPropagation()
       onCancel()
-    } else if (e.key === 'Enter' && e.target instanceof HTMLInputElement && !applyDisabled) {
-      const inputs = body.current?.querySelectorAll('input')
-      if (inputs && inputs[inputs.length - 1] === e.target) onApply()
+    } else if (e.key === 'Enter' && e.target instanceof HTMLInputElement && e.target.type === 'text') {
+      setQueued(true)
+    } else if (queued) {
+      setQueued(false)
     }
   }
 

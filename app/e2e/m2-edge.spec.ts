@@ -139,12 +139,14 @@ test.describe('M2 edge cases: upstream edits', () => {
 
     // Edit Sketch 1: delete the four lines of the rectangle and draw a circle instead.
     await historyItem(page, 'Sketch 1').click()
+    await waitCameraStable(page) // the view flies to the sketch; click only once it has arrived
     await clickWorld(page, [20, 0, 0])
     await page.keyboard.down('Shift')
+    // Off the middle of each line: the dimension labels sit on the midpoints.
     const others: [number, number, number][] = [
-      [40, 10, 0],
-      [20, 20, 0],
-      [0, 10, 0],
+      [40, 4, 0],
+      [12, 20, 0],
+      [0, 4, 0],
     ]
     for (const p of others) await clickWorld(page, p)
     await page.keyboard.up('Shift')
@@ -521,10 +523,7 @@ test.describe('M2 edge cases: keyboard', () => {
     await expect(c.getByText('1 edge')).toBeVisible()
     await expect(c.getByLabel('Radius')).toBeFocused()
     await page.keyboard.type('2')
-    await page.keyboard.press('Tab') // commit by leaving the field
-    await settle(page)
-    await page.getByLabel('Radius').focus()
-    await page.keyboard.press('Enter')
+    await page.keyboard.press('Enter') // right after typing: the apply waits for the preview of this value
     await expect(c).toBeHidden()
     await expect(historyItem(page, 'Fillet 1')).toBeVisible()
     await settle(page)
