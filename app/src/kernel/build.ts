@@ -172,7 +172,7 @@ export interface ExtrudeInput {
   direction: 1 | -1 | 0
 }
 
-function groupByName<T extends { name: string }>(items: T[]): T[][] {
+export function groupByName<T extends { name: string }>(items: T[]): T[][] {
   const m = new Map<string, T[]>()
   for (const it of items) {
     const list = m.get(it.name)
@@ -194,6 +194,56 @@ function cmpVec(a: Vec3, b: Vec3): number {
     if (Math.abs(a[i] - b[i]) > eps) return a[i] - b[i]
   }
   return 0
+}
+
+/**
+ * Final names for a shape: faces get the name given for their hash (else '<prefix>/face:<i>'), faces that end
+ * up with the same name get '#1', '#2' ... in a stable geometric order, and each edge is named after its two
+ * adjacent face names (sorted), with the same '#n' rule. Shared by extrude and by naming.ts.
+ */
+export function assignNames(
+  shape: AnyShape,
+  nameOfHash: Map<number, string>,
+  fallbackPrefix: string,
+): { faceNames: Map<number, string>; edgeNames: Map<number, string> } {
+  const faces = shape.faces
+  const faceEntries = faces.map((f, i) => ({
+    hash: f.hashCode,
+    name: nameOfHash.get(f.hashCode) ?? `${fallbackPrefix}/face:${i}`,
+    center: tuple(f.center),
+  }))
+  const faceNames = new Map<number, string>()
+  for (const group of groupByName(faceEntries)) {
+    if (group.length > 1) group.sort((a, b) => cmpVec(a.center, b.center))
+    group.forEach((g, i) => {
+      const nm = group.length > 1 ? `${g.name}#${i + 1}` : g.name
+      faceNames.set(g.hash, nm)
+    })
+  }
+
+  // edge names: the two adjacent face names, sorted
+  const edgeInfo = new Map<number, { mid: Vec3; faces: string[] }>()
+  for (const f of faces) {
+    const fname = faceNames.get(f.hashCode)!
+    for (const e of f.edges) {
+      const h = e.hashCode
+      const info = edgeInfo.get(h)
+      if (info) info.faces.push(fname)
+      else edgeInfo.set(h, { mid: tuple(e.pointAt(0.5)), faces: [fname] })
+      e.delete()
+    }
+  }
+  const edgeEntries = [...edgeInfo.entries()].map(([hash, info]) => {
+    const pair = info.faces.length === 1 ? [info.faces[0], info.faces[0]] : info.faces.slice(0, 2)
+    return { hash, mid: info.mid, name: [...pair].sort().join('|') }
+  })
+  const edgeNames = new Map<number, string>()
+  for (const group of groupByName(edgeEntries)) {
+    if (group.length > 1) group.sort((a, b) => cmpVec(a.mid, b.mid))
+    group.forEach((g, i) => edgeNames.set(g.hash, group.length > 1 ? `${g.name}#${i + 1}` : g.name))
+  }
+  for (const f of faces) f.delete()
+  return { faceNames, edgeNames }
 }
 
 export function buildExtrusion(input: ExtrudeInput): BuiltBody {
@@ -242,46 +292,9 @@ export function buildExtrusion(input: ExtrudeInput): BuiltBody {
     result = solids.length === 1 ? solids[0] : makeCompound(solids)
     const shape = result
 
-    // ---- face names (duplicates get #1, #2 ... in a stable geometric order)
     const nameOfHash = new Map<number, string>()
     for (const { hash, name } of faceHashToName) nameOfHash.set(hash, name)
-    const faces = shape.faces
-    const faceEntries = faces.map((f, i) => ({
-      hash: f.hashCode,
-      name: nameOfHash.get(f.hashCode) ?? `${extrudeId}/face:${i}`,
-      center: tuple(f.center),
-    }))
-    const faceNames = new Map<number, string>()
-    for (const group of groupByName(faceEntries)) {
-      if (group.length > 1) group.sort((a, b) => cmpVec(a.center, b.center))
-      group.forEach((g, i) => {
-        const nm = group.length > 1 ? `${g.name}#${i + 1}` : g.name
-        faceNames.set(g.hash, nm)
-      })
-    }
-
-    // ---- edge names: the two adjacent face names, sorted
-    const edgeInfo = new Map<number, { mid: Vec3; faces: string[] }>()
-    for (const f of faces) {
-      const fname = faceNames.get(f.hashCode)!
-      for (const e of f.edges) {
-        const h = e.hashCode
-        const info = edgeInfo.get(h)
-        if (info) info.faces.push(fname)
-        else edgeInfo.set(h, { mid: tuple(e.pointAt(0.5)), faces: [fname] })
-        e.delete()
-      }
-    }
-    const edgeEntries = [...edgeInfo.entries()].map(([hash, info]) => {
-      const pair = info.faces.length === 1 ? [info.faces[0], info.faces[0]] : info.faces.slice(0, 2)
-      return { hash, mid: info.mid, name: [...pair].sort().join('|') }
-    })
-    const edgeNames = new Map<number, string>()
-    for (const group of groupByName(edgeEntries)) {
-      if (group.length > 1) group.sort((a, b) => cmpVec(a.mid, b.mid))
-      group.forEach((g, i) => edgeNames.set(g.hash, group.length > 1 ? `${g.name}#${i + 1}` : g.name))
-    }
-    for (const f of faces) f.delete()
+    const { faceNames, edgeNames } = assignNames(shape, nameOfHash, extrudeId)
 
     // The compound holds its own reference to the solids, so the wrappers can go.
     if (solids.length > 1) for (const s of solids) safeDelete(s)

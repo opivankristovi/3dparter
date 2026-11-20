@@ -132,7 +132,7 @@ describe('errors', () => {
     k.dispose()
   })
 
-  it('reports bad distances and unsupported modes', () => {
+  it('reports bad distances and a missing join target', () => {
     const k = new Regenerator()
     const s = sketchFeature('s', 'XY', rect('l', 0, 0, 10, 10))
     let r = k.regenerate(docOf(s, extrudeFeature('e', [BOX_REGION], 'abc')), 1)
@@ -140,7 +140,7 @@ describe('errors', () => {
     r = k.regenerate(docOf(s, extrudeFeature('e', [BOX_REGION], '0')), 1)
     expect(r.statuses[1].ok).toBe(false)
     r = k.regenerate(docOf(s, extrudeFeature('e', [BOX_REGION], '5', 1, 'union')), 1)
-    expect(r.statuses[1]).toMatchObject({ ok: false, message: 'Join, Cut and Intersect arrive in a later version.' })
+    expect(r.statuses[1]).toMatchObject({ ok: false, message: 'Pick the solid to join to.' })
     k.dispose()
   })
 

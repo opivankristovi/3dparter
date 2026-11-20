@@ -3,6 +3,10 @@
 import { createRequire } from 'node:module'
 import {
   emptyDocument,
+  type BooleanFeature,
+  type ChamferFeature,
+  type FilletFeature,
+  type Ref,
   type CircleEntity,
   type ExtrudeFeature,
   type LineEntity,
@@ -55,6 +59,7 @@ export function extrudeFeature(
   distance: string,
   direction: 1 | -1 | 0 = 1,
   mode: ExtrudeFeature['params']['mode'] = 'new',
+  targets: string[] = [],
 ): ExtrudeFeature {
   return {
     id,
@@ -66,7 +71,51 @@ export function extrudeFeature(
       distance,
       direction,
       mode,
-      targets: [],
+      targets: targets.map((name) => ({ kind: 'body' as const, name })),
+    },
+  }
+}
+
+/** An edge ref by name; pass a hint to test the position fallback. */
+export const edgeRef = (name: string, hint?: Ref['hint']): Ref => ({ kind: 'edge', name, ...(hint ? { hint } : {}) })
+
+export function filletFeature(id: string, edges: (string | Ref)[], radius: string): FilletFeature {
+  return {
+    id,
+    name: id,
+    suppressed: false,
+    type: 'fillet',
+    params: { edges: edges.map((e) => (typeof e === 'string' ? edgeRef(e) : e)), radius },
+  }
+}
+
+export function chamferFeature(id: string, edges: (string | Ref)[], distance: string): ChamferFeature {
+  return {
+    id,
+    name: id,
+    suppressed: false,
+    type: 'chamfer',
+    params: { edges: edges.map((e) => (typeof e === 'string' ? edgeRef(e) : e)), distance },
+  }
+}
+
+export function booleanFeature(
+  id: string,
+  op: BooleanFeature['params']['op'],
+  target: string,
+  tools: string[],
+  keepTools = false,
+): BooleanFeature {
+  return {
+    id,
+    name: id,
+    suppressed: false,
+    type: 'boolean',
+    params: {
+      op,
+      target: { kind: 'body', name: target },
+      tools: tools.map((name) => ({ kind: 'body' as const, name })),
+      keepTools,
     },
   }
 }
