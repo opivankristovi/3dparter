@@ -1,6 +1,6 @@
 // Web Worker entry: exposes the KernelApi through Comlink. All OpenCascade objects live here.
 import * as Comlink from 'comlink'
-import type { ProjectDocument } from '../doc/types'
+import type { ProjectDocument, Ref } from '../doc/types'
 import type { ExportFormat, ExportOptions, KernelApi, MeshData } from './api'
 import { exportStl } from './export'
 import { meshBody, sketchRegionData } from './mesh'
@@ -54,6 +54,21 @@ const api: KernelApi = {
       r.fill.indices.buffer,
     ])
     return Comlink.transfer(data, buffers)
+  },
+
+  async sketchFrame(sketchFeatureId: string) {
+    await init()
+    return kernel.sketchFrame(sketchFeatureId)
+  },
+
+  async planeFrame(ref: Ref) {
+    await init()
+    return kernel.planeFrame(ref)
+  },
+
+  async constructionPlanes() {
+    await init()
+    return kernel.constructionPlanes()
   },
 
   async bounds() {

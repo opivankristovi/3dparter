@@ -133,7 +133,7 @@ function distToEntity(p: Vec2, e: SketchEntity): number {
   return Math.min(Math.hypot(p[0] - a[0], p[1] - a[1]), Math.hypot(p[0] - b[0], p[1] - b[1]))
 }
 
-function matchEntity(
+export function matchEntity(
   edge: Edge,
   ids: string[],
   entities: Map<string, SketchEntity>,

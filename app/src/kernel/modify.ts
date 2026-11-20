@@ -1,8 +1,8 @@
-// OpenCascade side of the body-changing features: fillet, chamfer and the three booleans.
+// OpenCascade side of the body-changing features: fillet, chamfer, the three booleans, shell and transform.
 // Each function reads body shapes, never changes them, and returns a NEW BuiltBody whose names were carried
 // over from the inputs with OpenCascade's history (naming.ts). Failures throw an Error with a plain message.
-import { cast, getOC, type AnyShape } from 'replicad'
-import type { BooleanMode } from '../doc/types'
+import { cast, getOC, measureVolume, type AnyShape } from 'replicad'
+import type { BooleanMode, Vec3 } from '../doc/types'
 import { Scope, safeDelete, type BuiltBody } from './build'
 import { carryNames, type ShapeHistory } from './naming'
 
@@ -24,7 +24,7 @@ function singleSolid(shape: AnyShape, emptyMessage: string): AnyShape {
   return shape
 }
 
-function isValid(shape: AnyShape): boolean {
+export function isValid(shape: AnyShape): boolean {
   const oc = getOC()
   const check = new oc.BRepCheck_Analyzer(shape.wrapped, true, false, false)
   try {
@@ -99,8 +99,12 @@ const EMPTY: Record<BoolOp, string> = {
   intersect: 'These solids do not overlap.',
 }
 
-/** `a` op `b` as a new body. Neither input is changed; faces keep the names they had in `a` and `b`. */
-export function combine(featureId: string, op: BoolOp, a: BuiltBody, b: BuiltBody): BuiltBody {
+/**
+ * `a` op `b` as a new body. Neither input is changed; faces keep the names they had in `a` and `b`.
+ * `toolPrefix` is put in front of the names that come from `b` (used when the tool body is kept, so that the
+ * target's names stay unique across bodies).
+ */
+export function combine(featureId: string, op: BoolOp, a: BuiltBody, b: BuiltBody, toolPrefix = ''): BuiltBody {
   const oc = getOC()
   const scope = new Scope()
   let result: AnyShape | null = null
@@ -123,7 +127,7 @@ export function combine(featureId: string, op: BoolOp, a: BuiltBody, b: BuiltBod
     result = cast(algo.Shape())
     const solid = singleSolid(result, EMPTY[op])
     result = solid
-    const names = carryNames({ featureId, algo, sources: [a, b], result: solid })
+    const names = carryNames({ featureId, algo, sources: [a, b], result: solid, prefixes: ['', toolPrefix] })
     const done: BuiltBody = { shape: solid, ...names }
     result = null
     return done
@@ -138,4 +142,151 @@ export function combine(featureId: string, op: BoolOp, a: BuiltBody, b: BuiltBod
 /** Frees the shape of a body that was only an intermediate result. */
 export function discard(body: BuiltBody): void {
   safeDelete(body.shape)
+}
+
+// ---- shell ----------------------------------------------------------------------------------------
+
+const SHELL_FAIL = 'The wall is too thick for this shape, or the shape cannot be hollowed.'
+
+/**
+ * With no face to open, OpenCascade hands back only the inward offset of the solid. A closed hollow solid is that
+ * offset turned inside out and used as the void of the original. Frees `inner`; the faces of both stay shared.
+ */
+function hollow(outer: AnyShape, inner: AnyShape): AnyShape {
+  const oc = getOC()
+  const scope = new Scope()
+  try {
+    if (outer.solids.length !== 1) throw new Error(SHELL_FAIL)
+    const firstShell = (shape: AnyShape) => {
+      const ex = scope.track(new oc.TopExp_Explorer(shape.wrapped, oc.TopAbs_ShapeEnum.TopAbs_SHELL, oc.TopAbs_ShapeEnum.TopAbs_SHAPE))
+      if (!ex.More()) throw new Error(SHELL_FAIL)
+      return ex.Current()
+    }
+    const outerShell = oc.TopoDS.Shell(firstShell(outer))
+    const innerShell = oc.TopoDS.Shell(scope.track(firstShell(inner).Reversed()))
+    const mk = scope.track(new oc.BRepBuilderAPI_MakeSolid(outerShell, innerShell))
+    return cast(mk.Solid())
+  } finally {
+    scope.free()
+    safeDelete(inner)
+  }
+}
+
+/** Hollows `body` inwards to a wall `thickness`, opening `removeFaces` (live faces of the body). */
+export function shellBody(featureId: string, body: BuiltBody, removeFaces: AnyShape[], thickness: number): BuiltBody {
+  const oc = getOC()
+  const scope = new Scope()
+  let result: AnyShape | null = null
+  try {
+    let mk: (ShapeHistory & { Shape(): never }) | null = null
+    try {
+      const closing = scope.track(new oc.NCollection_List_TopoDS_Shape())
+      for (const f of removeFaces) closing.Append(f.wrapped)
+      const algo = scope.track(new oc.BRepOffsetAPI_MakeThickSolid())
+      algo.MakeThickSolidByJoin(
+        body.shape.wrapped,
+        closing,
+        -thickness,
+        1e-3,
+        oc.BRepOffset_Mode.BRepOffset_Skin,
+        false,
+        false,
+        oc.GeomAbs_JoinType.GeomAbs_Intersection,
+        false,
+      )
+      mk = algo as never
+      result = cast((mk as { Shape(): never }).Shape())
+      if (removeFaces.length === 0) result = hollow(body.shape, result)
+    } catch {
+      throw new Error(SHELL_FAIL)
+    }
+    if (!result || !isValid(result)) throw new Error(SHELL_FAIL)
+    const solid = singleSolid(result, SHELL_FAIL)
+    result = solid
+    // An inward wall can only remove material; anything else is a failed offset.
+    const before = measureVolume(body.shape as never)
+    const after = measureVolume(solid as never)
+    if (!(after > 1e-6) || after >= before - 1e-9) throw new Error(SHELL_FAIL)
+    const names = carryNames({ featureId, algo: mk!, sources: [body], result: solid, shell: true })
+    const done: BuiltBody = { shape: solid, ...names }
+    result = null
+    return done
+  } catch (err) {
+    safeDelete(result)
+    throw err
+  } finally {
+    scope.free()
+  }
+}
+
+// ---- transform ------------------------------------------------------------------------------------
+
+export interface TransformSpec {
+  /** Radians, about `axis` through `pivot`. Applied first. */
+  rotate: { axis: Vec3; pivot: Vec3; angle: number } | null
+  /** Applied after the rotation. */
+  translate: Vec3
+}
+
+function prefixEdgeName(name: string, prefix: string): string {
+  return name
+    .split('|')
+    .map((p) => prefix + p)
+    .join('|')
+}
+
+/**
+ * A moved copy of `body`. The topology is the same, so every face and edge keeps its name (found through the
+ * transform's own history); `prefix` goes in front of every name (used for copies, so names stay unique).
+ */
+export function transformBody(body: BuiltBody, spec: TransformSpec, prefix: string): BuiltBody {
+  const oc = getOC()
+  const scope = new Scope()
+  let result: AnyShape | null = null
+  try {
+    const move = scope.track(new oc.gp_Trsf())
+    move.SetTranslation(scope.track(new oc.gp_Vec(spec.translate[0], spec.translate[1], spec.translate[2])))
+    let total = move
+    if (spec.rotate) {
+      const { axis, pivot, angle } = spec.rotate
+      const pnt = scope.track(new oc.gp_Pnt(pivot[0], pivot[1], pivot[2]))
+      const dir = scope.track(new oc.gp_Dir(axis[0], axis[1], axis[2]))
+      const ax = scope.track(new oc.gp_Ax1(pnt, dir))
+      const rot = scope.track(new oc.gp_Trsf())
+      rot.SetRotation(ax, angle)
+      rot.PreMultiply(move) // rotation first, then the translation
+      total = rot
+    }
+    const tr = scope.track(new oc.BRepBuilderAPI_Transform(body.shape.wrapped, total, true, false))
+    result = cast(tr.Shape())
+
+    const faceNames = new Map<number, string>()
+    for (const face of body.shape.faces) {
+      const name = body.faceNames.get(face.hashCode)
+      if (name !== undefined) {
+        const moved = cast(tr.ModifiedShape(face.wrapped))
+        faceNames.set(moved.hashCode, prefix + name)
+        moved.delete()
+      }
+      face.delete()
+    }
+    const edgeNames = new Map<number, string>()
+    for (const edge of body.shape.edges) {
+      const name = body.edgeNames.get(edge.hashCode)
+      if (name !== undefined) {
+        const moved = cast(tr.ModifiedShape(edge.wrapped))
+        edgeNames.set(moved.hashCode, prefix ? prefixEdgeName(name, prefix) : name)
+        moved.delete()
+      }
+      edge.delete()
+    }
+    const done: BuiltBody = { shape: result, faceNames, edgeNames }
+    result = null
+    return done
+  } catch (err) {
+    safeDelete(result)
+    throw err
+  } finally {
+    scope.free()
+  }
 }

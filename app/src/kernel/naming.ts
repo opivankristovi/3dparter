@@ -60,11 +60,18 @@ export interface CarryInput {
   result: AnyShape
   /** Name faces made from an edge '<featureId>/blend/<edge name>' (fillet, chamfer). */
   blend?: boolean
+  /**
+   * Shell: a face Generated from an old face is its inner wall '<featureId>/inner/<old name>'; a removed face
+   * that leaves a rim behind names the rim '<featureId>/rim/<old name>'.
+   */
+  shell?: boolean
+  /** Prefix for the names carried over from each source (same order as `sources`); default none. */
+  prefixes?: string[]
 }
 
 /** Faces and edges names of `result`, carried over from `sources` through the algorithm's history. */
 export function carryNames(input: CarryInput): { faceNames: Map<number, string>; edgeNames: Map<number, string> } {
-  const { featureId, algo, sources, result, blend } = input
+  const { featureId, algo, sources, result, blend, shell, prefixes } = input
   const resultFaces = result.faces
   const inResult = new Set(resultFaces.map((f) => f.hashCode))
   for (const f of resultFaces) f.delete()
@@ -74,10 +81,17 @@ export function carryNames(input: CarryInput): { faceNames: Map<number, string>;
     if (inResult.has(hash) && !nameOfHash.has(hash)) nameOfHash.set(hash, name)
   }
 
-  for (const src of sources) {
+  sources.forEach((src, si) => {
+    const prefix = prefixes?.[si] ?? ''
     for (const face of src.shape.faces) {
-      const old = src.faceNames.get(face.hashCode)
-      if (old !== undefined) {
+      const base = src.faceNames.get(face.hashCode)
+      const old = base === undefined ? undefined : prefix + base
+      if (old !== undefined && shell) {
+        const stays = inResult.has(face.hashCode)
+        if (stays) give(face.hashCode, old)
+        for (const h of hashesOf(algo.Modified(face.wrapped))) give(h, stays ? old : `${featureId}/rim/${old}`)
+        for (const h of hashesOf(algo.Generated(face.wrapped))) give(h, `${featureId}/inner/${old}`)
+      } else if (old !== undefined) {
         const modified = hashesOf(algo.Modified(face.wrapped))
         if (modified.length === 0) {
           // Left alone (the algorithm may hand back the very same face): keep the name unless it is gone.
@@ -88,7 +102,7 @@ export function carryNames(input: CarryInput): { faceNames: Map<number, string>;
       }
       face.delete()
     }
-  }
+  })
 
   if (blend) {
     for (const src of sources) {

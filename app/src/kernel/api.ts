@@ -1,7 +1,7 @@
 // SHARED CONTRACT: the kernel worker's API, called from the UI through Comlink.
 // The worker owns all B-rep geometry (OpenCascade via replicad). The UI only ever sees
 // documents going in and meshes/outlines/files coming out.
-import type { ProjectDocument, Vec3 } from '../doc/types'
+import type { PlaneFrame, ProjectDocument, Ref, Vec3 } from '../doc/types'
 
 export interface FeatureStatus {
   featureId: string
@@ -61,6 +61,12 @@ export interface KernelApi {
   getMesh(bodyId: string, quality: 'preview' | 'high'): Promise<MeshData>
   /** Regions of a sketch feature as of the last regenerate. Empty array if it has no closed loops. */
   sketchRegions(sketchFeatureId: string): Promise<SketchRegionData[]>
+  /** The plane a sketch was drawn in (its face or construction plane resolved), as of the last regenerate. null if the sketch failed. */
+  sketchFrame(sketchFeatureId: string): Promise<PlaneFrame | null>
+  /** The frame of an origin plane, a construction plane or a flat face as of the last regenerate; null if it is gone or not flat. */
+  planeFrame(ref: Ref): Promise<PlaneFrame | null>
+  /** Every working construction plane, in feature order, for drawing them. */
+  constructionPlanes(): Promise<{ name: string; frame: PlaneFrame }[]>
   /** Bounding box of all visible bodies, for "zoom to fit". null if there are none. */
   bounds(): Promise<{ min: Vec3; max: Vec3 } | null>
   exportFile(format: ExportFormat, bodyIds: string[], opts: ExportOptions): Promise<ArrayBuffer>

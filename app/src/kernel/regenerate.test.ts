@@ -144,12 +144,12 @@ describe('errors', () => {
     k.dispose()
   })
 
-  it('fails later steps with "An earlier step failed." and rejects sketching on faces', () => {
+  it('fails later steps with "An earlier step failed." and rejects sketching on a missing face', () => {
     const k = new Regenerator()
     const bad = sketchFeature('s', 'XY', rect('l', 0, 0, 10, 10))
     bad.params.on = { kind: 'face', name: 'x/cap:end' }
     const r = k.regenerate(docOf(bad, extrudeFeature('e', [BOX_REGION], '5')), 1)
-    expect(r.statuses[0].message).toBe('Sketching on faces arrives in a later version.')
+    expect(r.statuses[0].message).toBe('The face this sketch was on is gone.')
     expect(r.statuses[1]).toMatchObject({ ok: false, message: 'An earlier step failed.' })
     k.dispose()
   })

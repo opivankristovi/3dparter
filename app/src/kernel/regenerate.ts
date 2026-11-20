@@ -16,23 +16,35 @@ import {
   type ExtrudeFeature,
   type Feature,
   type FilletFeature,
+  type LineEntity,
   type OriginPlaneName,
+  type PlaneFeature,
   type PlaneFrame,
   type ProjectDocument,
   type Ref,
+  type RevolveFeature,
+  type ShellFeature,
   type SketchEntity,
   type SketchFeature,
+  type TransformFeature,
+  type Vec3,
 } from '../doc/types'
 import type { FeatureStatus, RegenResult } from './api'
 import { buildExtrusion, safeDelete, Scope, type BuiltBody } from './build'
-import { chamferBody, combine, discard, filletBody, type BoolOp } from './modify'
+import type { Face } from 'replicad'
+import { dirToLocal, dotVec, faceFrame, localToWorld, subVec, tiltAndOffset, worldToLocal } from './frames'
+import { chamferBody, combine, discard, filletBody, shellBody, transformBody, type BoolOp } from './modify'
 import { HINT_WARNING, pickSubShapes, resolveBodyRef, resolveSubRef, type Resolved } from './naming'
 import { findRegions, type Region } from './regions'
+import { buildRevolution, profilesCrossAxis, type LocalAxis } from './revolve'
 
 export interface SketchRecord {
   sketchId: string
   frame: PlaneFrame
+  /** The real (non-construction) entities: what regions and solids are built from. */
   entities: Map<string, SketchEntity>
+  /** Every line, construction lines included: a revolve can turn around any of them. */
+  lines: Map<string, LineEntity>
   regions: Region[]
 }
 
@@ -48,6 +60,8 @@ interface FeatureRecord {
   key: string
   status: FeatureStatus
   sketch?: SketchRecord
+  /** The frame of a construction plane (plane features only). */
+  plane?: PlaneFrame
   /** Bodies added, or replaced under the same name. */
   set: BodyRecord[]
   /** Names of bodies this feature consumed. */
@@ -102,8 +116,18 @@ function hash(str: string): string {
 /** Every ref a feature holds. Add a case when a new feature type reads refs. */
 function refsOf(f: Feature): Ref[] {
   switch (f.type) {
+    case 'sketch':
+      return [f.params.on]
     case 'extrude':
       return [...f.params.profiles, ...f.params.targets]
+    case 'revolve':
+      return [...f.params.profiles, f.params.axis, ...f.params.targets]
+    case 'shell':
+      return [f.params.body, ...f.params.removeFaces]
+    case 'transform':
+      return f.params.bodies
+    case 'plane':
+      return [f.params.base]
     case 'fillet':
     case 'chamfer':
       return f.params.edges
@@ -118,6 +142,7 @@ function refsOf(f: Feature): Ref[] {
 function dependencies(f: Feature): string[] {
   const ids = new Set<string>()
   for (const r of refsOf(f)) {
+    if (!r || r.kind === 'originPlane' || r.kind === 'originAxis') continue
     for (const part of r.name.split('|')) {
       const id = part.split('/')[0]
       if (id) ids.add(id)
@@ -230,6 +255,28 @@ export class Regenerator {
     return rec?.status.ok ? rec.sketch : undefined
   }
 
+  /** The frame a sketch was drawn in, as of the last regenerate. */
+  sketchFrame(featureId: string): PlaneFrame | null {
+    return this.getSketch(featureId)?.frame ?? null
+  }
+
+  /** The frame of an origin plane, a construction plane or a flat face, as of the last regenerate. */
+  planeFrame(ref: Ref): PlaneFrame | null {
+    try {
+      const r = this.frameOf(ref, { done: this.records, bodies: this.bodies }, 'plane')
+      return 'frame' in r ? r.frame : null
+    } catch {
+      return null
+    }
+  }
+
+  /** Every working construction plane, in feature order. */
+  constructionPlanes(): { name: string; frame: PlaneFrame }[] {
+    const out: { name: string; frame: PlaneFrame }[] = []
+    for (const [id, rec] of this.records) if (rec.status.ok && rec.plane) out.push({ name: id, frame: rec.plane })
+    return out
+  }
+
   /** All current bodies that are not hidden in the document. */
   visibleBodies(): BodyRecord[] {
     return [...this.bodies.values()].filter((b) => this.visibility.get(b.name) !== false)
@@ -270,9 +317,17 @@ export class Regenerator {
       // One case per feature type. A new type: add a handler and a case (and its refs in `refsOf`).
       switch (f.type) {
         case 'sketch':
-          return this.evalSketch(f, key)
+          return this.evalSketch(f, key, ctx)
         case 'extrude':
           return this.evalExtrude(f, key, ctx)
+        case 'revolve':
+          return this.evalRevolve(f, key, ctx)
+        case 'shell':
+          return this.evalShell(f, key, ctx)
+        case 'transform':
+          return this.evalTransform(f, key, ctx)
+        case 'plane':
+          return this.evalPlane(f, key, ctx)
         case 'fillet':
           return this.evalEdgeOp(f, key, ctx)
         case 'chamfer':
@@ -287,86 +342,125 @@ export class Regenerator {
     }
   }
 
-  private evalSketch(f: SketchFeature, key: string): FeatureRecord {
-    const bad = (message: string): FeatureRecord => ({
-      key,
-      status: { featureId: f.id, ok: false, message },
-      set: [],
-      removed: [],
-    })
-    const on = f.params.on
-    if (on.kind !== 'originPlane') return bad('Sketching on faces arrives in a later version.')
-    const frame = ORIGIN_PLANES[on.name as OriginPlaneName]
-    if (!frame) return bad('This sketch is on a plane that does not exist.')
+  /** The frame of a ref that stands for a plane: an origin plane, a construction plane or a flat face. */
+  private frameOf(ref: Ref, ctx: Ctx, what: 'sketch' | 'plane'): { frame: PlaneFrame; warning?: string } | { error: string } {
+    const on = what === 'sketch' ? 'was on' : 'was based on'
+    if (ref.kind === 'originPlane') {
+      const frame = ORIGIN_PLANES[ref.name as OriginPlaneName]
+      if (frame) return { frame }
+      return { error: what === 'sketch' ? 'This sketch is on a plane that does not exist.' : 'This plane is based on a plane that does not exist.' }
+    }
+    if (ref.kind === 'constructionPlane') {
+      const rec = ctx.done.get(ref.name)
+      if (!rec?.plane || !rec.status.ok) return { error: `The plane this ${what} ${on} is gone.` }
+      return { frame: rec.plane }
+    }
+    if (ref.kind === 'face') {
+      const r = resolveSubRef(ref, ctx.bodies.values())
+      if (!r) return { error: `The face this ${what} ${on} is gone.` }
+      const scope = new Scope()
+      try {
+        const [face] = pickSubShapes(r.body, 'face', [r.hash], scope) as Face[]
+        const frame = face ? faceFrame(face) : null
+        if (!frame) return { error: 'This face is not flat.' }
+        return { frame, ...(r.byHint ? { warning: HINT_WARNING } : {}) }
+      } finally {
+        scope.free()
+      }
+    }
+    return { error: `Pick a plane or a flat face for this ${what}.` }
+  }
+
+  private evalSketch(f: SketchFeature, key: string, ctx: Ctx): FeatureRecord {
+    const placed = this.frameOf(f.params.on, ctx, 'sketch')
+    if ('error' in placed) {
+      return { key, status: { featureId: f.id, ok: false, message: placed.error }, set: [], removed: [] }
+    }
     const entities = new Map<string, SketchEntity>()
-    for (const e of f.sketch.entities) if (!e.construction) entities.set(e.id, e)
+    const lines = new Map<string, LineEntity>()
+    for (const e of f.sketch.entities) {
+      if (e.type === 'line') lines.set(e.id, e)
+      if (!e.construction) entities.set(e.id, e)
+    }
     const regions = findRegions(f.id, f.sketch)
     return {
       key,
-      status: { featureId: f.id, ok: true },
-      sketch: { sketchId: f.id, frame, entities, regions },
+      status: { featureId: f.id, ok: true, ...(placed.warning ? { warning: placed.warning } : {}) },
+      sketch: { sketchId: f.id, frame: placed.frame, entities, lines, regions },
       set: [],
       removed: [],
     }
   }
 
-  // ---- extrude (new, union, subtract, intersect) ------------------------------------------------
+  // ---- plane -----------------------------------------------------------------------------------
 
-  private evalExtrude(f: ExtrudeFeature, key: string, ctx: Ctx): FeatureRecord {
-    const p = f.params
+  private evalPlane(f: PlaneFeature, key: string, ctx: Ctx): FeatureRecord {
     const fail = (message: string): FeatureRecord => ({ key, status: { featureId: f.id, ok: false, message }, set: [], removed: [] })
-    const distance = Number(p.distance)
-    if (!Number.isFinite(distance) || distance <= 0) return fail('Enter a distance greater than 0.')
-    if (p.profiles.length === 0) return fail('Pick a shape to extrude.')
+    const offset = Number(f.params.offset)
+    if (!Number.isFinite(offset)) return fail('Enter a number for the offset.')
+    const angle = Number(f.params.angle === '' || f.params.angle === undefined ? '0' : f.params.angle)
+    if (!Number.isFinite(angle)) return fail('Enter a number for the angle.')
+    if (!f.params.base || !f.params.base.name) return fail('Pick a plane or a flat face to build this plane on.')
+    const base = this.frameOf(f.params.base, ctx, 'plane')
+    if ('error' in base) return fail(base.error)
+    return {
+      key,
+      status: { featureId: f.id, ok: true, ...(base.warning ? { warning: base.warning } : {}) },
+      plane: tiltAndOffset(base.frame, angle, offset),
+      set: [],
+      removed: [],
+    }
+  }
 
+  // ---- extrude and revolve (new, union, subtract, intersect) ------------------------------------
+
+  /** The regions the profile refs point at (all from one sketch), or a message. */
+  private pickRegions(profiles: Ref[], ctx: Ctx, gone: string): { regions: Region[]; sketch: SketchRecord } | { error: string } {
     const regions: Region[] = []
     let sketch: SketchRecord | undefined
-    for (const ref of p.profiles) {
+    for (const ref of profiles) {
       const sketchId = ref.name.split('/region:')[0]
       const sk = ctx.done.get(sketchId)?.sketch
-      if (!sk) return fail(ERR_GONE)
-      if (sketch && sketch !== sk) return fail('Pick shapes from one sketch at a time.')
+      if (!sk) return { error: gone }
+      if (sketch && sketch !== sk) return { error: 'Pick shapes from one sketch at a time.' }
       sketch = sk
       const region = sk.regions.find((r) => r.name === ref.name)
-      if (!region) return fail(ERR_GONE)
+      if (!region) return { error: gone }
       regions.push(region)
     }
-    if (!sketch) return fail(ERR_GONE)
+    if (!sketch) return { error: gone }
+    return { regions, sketch }
+  }
 
-    // targets first: no point building a solid when the thing to join to is missing
-    let targets: BodyRecord[] = []
-    if (p.mode !== 'new') {
-      if (p.targets.length === 0) return fail(PICK_TARGET[p.mode])
-      targets = []
-      for (const ref of p.targets) {
-        const t = resolveBodyRef(ref, ctx.bodies)
-        if (!t) return fail(ERR_BODY_GONE)
-        if (!targets.includes(t)) targets.push(t)
-      }
+  /** The target bodies of a non-'new' mode, or a message. Targets first: no point building a solid without them. */
+  private pickTargets(mode: ExtrudeFeature['params']['mode'], refs: Ref[], ctx: Ctx): { targets: BodyRecord[] } | { error: string } {
+    const targets: BodyRecord[] = []
+    if (mode === 'new') return { targets }
+    if (refs.length === 0) return { error: PICK_TARGET[mode] }
+    for (const ref of refs) {
+      const t = resolveBodyRef(ref, ctx.bodies)
+      if (!t) return { error: ERR_BODY_GONE }
+      if (!targets.includes(t)) targets.push(t)
     }
+    return { targets }
+  }
 
-    const tool = buildExtrusion({
-      extrudeId: f.id,
-      regions,
-      entities: sketch.entities,
-      frame: sketch.frame,
-      distance,
-      direction: p.direction,
-    })
-    if (p.mode === 'new') {
-      return { key, status: { featureId: f.id, ok: true }, set: [{ name: f.id, key, built: tool }], removed: [] }
+  /** Puts a freshly built tool solid into the model: as a new body, or combined with the targets. Frees the tool. */
+  private applyTool(id: string, key: string, mode: ExtrudeFeature['params']['mode'], targets: BodyRecord[], tool: BuiltBody): FeatureRecord {
+    if (mode === 'new') {
+      return { key, status: { featureId: id, ok: true }, set: [{ name: id, key, built: tool }], removed: [] }
     }
     try {
-      const mode: BoolOp = p.mode
+      const op: BoolOp = mode
       const set: BodyRecord[] = []
       let removed: string[] = []
-      if (mode === 'union') {
+      if (op === 'union') {
         // The tool joins the first target; any further targets are merged in and disappear as bodies.
         const [first, ...rest] = targets
-        let acc = combine(f.id, 'union', first.built, tool)
+        let acc = combine(id, 'union', first.built, tool)
         try {
           for (const t of rest) {
-            const merged = combine(f.id, 'union', acc, t.built)
+            const merged = combine(id, 'union', acc, t.built)
             discard(acc)
             acc = merged
           }
@@ -378,16 +472,164 @@ export class Regenerator {
         removed = rest.map((t) => t.name)
       } else {
         try {
-          for (const t of targets) set.push({ name: t.name, key, built: combine(f.id, mode, t.built, tool) })
+          for (const t of targets) set.push({ name: t.name, key, built: combine(id, op, t.built, tool) })
         } catch (err) {
           for (const b of set) discard(b.built)
           throw err
         }
       }
-      return { key, status: { featureId: f.id, ok: true }, set, removed }
+      return { key, status: { featureId: id, ok: true }, set, removed }
     } finally {
       discard(tool) // the tool body is never kept: its faces live on in the result under their names
     }
+  }
+
+  private evalExtrude(f: ExtrudeFeature, key: string, ctx: Ctx): FeatureRecord {
+    const p = f.params
+    const fail = (message: string): FeatureRecord => ({ key, status: { featureId: f.id, ok: false, message }, set: [], removed: [] })
+    const distance = Number(p.distance)
+    if (!Number.isFinite(distance) || distance <= 0) return fail('Enter a distance greater than 0.')
+    if (p.profiles.length === 0) return fail('Pick a shape to extrude.')
+
+    const picked = this.pickRegions(p.profiles, ctx, ERR_GONE)
+    if ('error' in picked) return fail(picked.error)
+    const targets = this.pickTargets(p.mode, p.targets, ctx)
+    if ('error' in targets) return fail(targets.error)
+
+    const tool = buildExtrusion({
+      extrudeId: f.id,
+      regions: picked.regions,
+      entities: picked.sketch.entities,
+      frame: picked.sketch.frame,
+      distance,
+      direction: p.direction,
+    })
+    return this.applyTool(f.id, key, p.mode, targets.targets, tool)
+  }
+
+  private evalRevolve(f: RevolveFeature, key: string, ctx: Ctx): FeatureRecord {
+    const p = f.params
+    const fail = (message: string): FeatureRecord => ({ key, status: { featureId: f.id, ok: false, message }, set: [], removed: [] })
+    const angle = Number(p.angle)
+    if (!Number.isFinite(angle) || angle <= 0 || angle > 360) return fail('Enter an angle above 0 and up to 360 degrees.')
+    if (p.profiles.length === 0) return fail('Pick a shape to revolve.')
+    if (!p.axis || !p.axis.name) return fail('Pick the line or axis to revolve around.')
+
+    const picked = this.pickRegions(p.profiles, ctx, 'The shape this revolve used is gone. Pick a new profile.')
+    if ('error' in picked) return fail(picked.error)
+    const { regions, sketch } = picked
+
+    // The axis, in world space and in the sketch's own coordinates.
+    let axisPoint: Vec3
+    let axisDir: Vec3
+    if (p.axis.kind === 'originAxis') {
+      const dir = ({ X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] } as Record<string, Vec3>)[p.axis.name]
+      if (!dir) return fail('This revolve turns around an axis that does not exist.')
+      axisPoint = [0, 0, 0]
+      axisDir = dir
+      const n = sketch.frame.normal
+      if (Math.abs(dotVec(dir, n)) > 1e-6 || Math.abs(dotVec(subVec(axisPoint, sketch.frame.origin), n)) > 1e-6) {
+        return fail('The axis has to lie in the plane of the sketch.')
+      }
+    } else if (p.axis.kind === 'sketchEdge') {
+      const slash = p.axis.name.indexOf('/')
+      const sketchId = slash < 0 ? '' : p.axis.name.slice(0, slash)
+      if (sketchId !== sketch.sketchId) return fail('Pick an axis line from the same sketch as the shape.')
+      const line = sketch.lines.get(p.axis.name.slice(slash + 1))
+      if (!line) return fail('The line this revolve turns around is gone.')
+      axisPoint = localToWorld(sketch.frame, line.a)
+      axisDir = subVec(localToWorld(sketch.frame, line.b), axisPoint)
+      if (Math.hypot(...axisDir) < 1e-9) return fail('The axis line has no length.')
+    } else {
+      return fail('Pick a line or an axis to revolve around.')
+    }
+    const local: LocalAxis = { p: worldToLocal(sketch.frame, axisPoint), d: dirToLocal(sketch.frame, axisDir) }
+    if (profilesCrossAxis(regions, local)) return fail('The shape crosses the axis it turns around.')
+
+    const targets = this.pickTargets(p.mode, p.targets, ctx)
+    if ('error' in targets) return fail(targets.error)
+
+    const tool = buildRevolution({
+      revolveId: f.id,
+      regions,
+      entities: sketch.entities,
+      frame: sketch.frame,
+      axisPoint,
+      axisDir,
+      angle: (angle * Math.PI) / 180,
+    })
+    return this.applyTool(f.id, key, p.mode, targets.targets, tool)
+  }
+
+  // ---- shell -----------------------------------------------------------------------------------
+
+  private evalShell(f: ShellFeature, key: string, ctx: Ctx): FeatureRecord {
+    const p = f.params
+    const fail = (message: string): FeatureRecord => ({ key, status: { featureId: f.id, ok: false, message }, set: [], removed: [] })
+    const thickness = Number(p.thickness)
+    if (!Number.isFinite(thickness) || thickness <= 0) return fail('Enter a wall thickness greater than 0.')
+    if (!p.body || !p.body.name) return fail('Pick the solid to hollow out.')
+    const body = resolveBodyRef(p.body, ctx.bodies)
+    if (!body) return fail(ERR_BODY_GONE)
+
+    const hashes: number[] = []
+    let byHint = false
+    for (const ref of p.removeFaces) {
+      const r = ref.kind === 'face' ? resolveSubRef(ref, [body]) : null
+      if (!r) return fail('A face this shell opened is gone. Pick it again.')
+      if (!hashes.includes(r.hash)) hashes.push(r.hash)
+      byHint = byHint || r.byHint
+    }
+
+    const scope = new Scope()
+    try {
+      const faces = pickSubShapes(body, 'face', hashes, scope)
+      const built = shellBody(f.id, body.built, faces, thickness)
+      return {
+        key,
+        status: { featureId: f.id, ok: true, ...(byHint ? { warning: HINT_WARNING } : {}) },
+        set: [{ name: body.name, key, built }],
+        removed: [],
+      }
+    } finally {
+      scope.free()
+    }
+  }
+
+  // ---- transform -------------------------------------------------------------------------------
+
+  private evalTransform(f: TransformFeature, key: string, ctx: Ctx): FeatureRecord {
+    const p = f.params
+    const fail = (message: string): FeatureRecord => ({ key, status: { featureId: f.id, ok: false, message }, set: [], removed: [] })
+    if (p.bodies.length === 0) return fail('Pick at least one solid to move.')
+    const bodies: BodyRecord[] = []
+    for (const ref of p.bodies) {
+      const b = resolveBodyRef(ref, ctx.bodies)
+      if (!b) return fail(ERR_BODY_GONE)
+      if (!bodies.includes(b)) bodies.push(b)
+    }
+    const translate = p.translate.map((e) => Number(e))
+    if (translate.length !== 3 || translate.some((v) => !Number.isFinite(v))) return fail('Enter numbers for the move.')
+    let rotate: { axis: Vec3; pivot: Vec3; angle: number } | null = null
+    if (p.rotate) {
+      const angle = Number(p.rotate.angle)
+      if (!Number.isFinite(angle)) return fail('Enter a number for the rotation angle.')
+      if (Math.hypot(...p.rotate.axis) < 1e-9) return fail('The rotation axis needs a direction.')
+      rotate = { axis: p.rotate.axis, pivot: p.rotate.pivot, angle: (angle * Math.PI) / 180 }
+    }
+
+    const set: BodyRecord[] = []
+    try {
+      bodies.forEach((b, i) => {
+        const name = p.copy ? `${f.id}:${i + 1}` : b.name
+        const prefix = p.copy ? `${name}/` : ''
+        set.push({ name, key, built: transformBody(b.built, { rotate, translate: translate as Vec3 }, prefix) })
+      })
+    } catch (err) {
+      for (const b of set) discard(b.built)
+      throw err
+    }
+    return { key, status: { featureId: f.id, ok: true }, set, removed: [] }
   }
 
   // ---- fillet and chamfer ----------------------------------------------------------------------
@@ -451,7 +693,7 @@ export class Regenerator {
     let acc: BuiltBody = target.built
     try {
       for (const t of tools) {
-        const next = combine(f.id, p.op, acc, t.built)
+        const next = combine(f.id, p.op, acc, t.built, p.keepTools ? `${f.id}/` : '')
         if (acc !== target.built) discard(acc)
         acc = next
       }

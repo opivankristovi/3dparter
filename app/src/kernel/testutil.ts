@@ -6,6 +6,10 @@ import {
   type BooleanFeature,
   type ChamferFeature,
   type FilletFeature,
+  type PlaneFeature,
+  type RevolveFeature,
+  type ShellFeature,
+  type TransformFeature,
   type Ref,
   type CircleEntity,
   type ExtrudeFeature,
@@ -124,4 +128,72 @@ export function docOf(...features: ProjectDocument['features']): ProjectDocument
   const d = emptyDocument()
   d.features = features
   return d
+}
+
+// ---- M2 helpers ------------------------------------------------------------------------------
+
+export const bodyRef = (name: string): Ref => ({ kind: 'body', name })
+export const faceRef = (name: string, hint?: Ref['hint']): Ref => ({ kind: 'face', name, ...(hint ? { hint } : {}) })
+
+/** A sketch on any Ref (origin plane, construction plane or face). */
+export function sketchOn(id: string, on: Ref, entities: SketchEntity[]): SketchFeature {
+  return { id, name: id, suppressed: false, type: 'sketch', params: { on }, sketch: { entities, constraints: [] } }
+}
+
+export const constructionLine = (id: string, a: Vec2, b: Vec2): LineEntity => ({ ...line(id, a, b), construction: true })
+
+export function revolveFeature(
+  id: string,
+  regionNames: string[],
+  axis: Ref,
+  angle: string,
+  mode: RevolveFeature['params']['mode'] = 'new',
+  targets: string[] = [],
+): RevolveFeature {
+  return {
+    id,
+    name: id,
+    suppressed: false,
+    type: 'revolve',
+    params: {
+      profiles: regionNames.map((name) => ({ kind: 'sketchRegion' as const, name })),
+      axis,
+      angle,
+      mode,
+      targets: targets.map(bodyRef),
+    },
+  }
+}
+
+export function shellFeature(id: string, body: string, removeFaces: string[], thickness: string): ShellFeature {
+  return {
+    id,
+    name: id,
+    suppressed: false,
+    type: 'shell',
+    params: { body: bodyRef(body), removeFaces: removeFaces.map((n) => faceRef(n)), thickness },
+  }
+}
+
+export function transformFeature(
+  id: string,
+  bodies: string[],
+  o: { translate?: [string, string, string]; rotate?: TransformFeature['params']['rotate']; copy?: boolean } = {},
+): TransformFeature {
+  return {
+    id,
+    name: id,
+    suppressed: false,
+    type: 'transform',
+    params: {
+      bodies: bodies.map(bodyRef),
+      translate: o.translate ?? ['0', '0', '0'],
+      rotate: o.rotate ?? null,
+      copy: o.copy ?? false,
+    },
+  }
+}
+
+export function planeFeature(id: string, base: Ref, offset: string, angle = '0'): PlaneFeature {
+  return { id, name: id, suppressed: false, type: 'plane', params: { base, offset, angle } }
 }

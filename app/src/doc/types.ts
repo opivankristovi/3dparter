@@ -37,7 +37,9 @@ export type RefKind =
  *   constructionPlane  '<planeFeatureId>'
  *   face (revolve)     '<revolveId>/side/<entityId>' | '<revolveId>/cap:start|end'
  *   face (fillet, chamfer)  '<featureId>/blend/<edge name>'
- *   face (shell)       '<shellId>/inner/<original face name>'
+ *   face (shell)       '<shellId>/inner/<original face name>', the rim at an opened face '<shellId>/rim/<name>'
+ *   body (transform copy)  '<transformId>:<n>'; its face names get the prefix '<transformId>:<n>/'
+ *   face (boolean with keepTools)  a target face that came from a kept tool: '<booleanId>/<tool face name>'
  *   A face split by a boolean keeps its name plus '#<n>' (stable geometric order). Faces a change
  *   leaves alone keep their names. A ref whose name is gone is matched again by `hint` (with a warning).
  */
