@@ -87,7 +87,9 @@ test.describe('F01 first part', () => {
     for (const bad of ['', '0', 'abc']) {
       await distance.fill(bad)
       await distance.blur()
-      await expect(card.getByText('Enter a number above zero.'), `error for "${bad}"`).toBeVisible()
+      // A word is read as a variable name now, so it gets the "no variable" message.
+      const message = bad === 'abc' ? 'There is no variable called abc.' : 'Enter a number above zero.'
+      await expect(card.getByText(message), `error for "${bad}"`).toBeVisible()
       await expect(apply, `Apply for "${bad}"`).toBeDisabled()
       expect(extrudes(await doc(page)), `no feature added for "${bad}"`).toHaveLength(0)
     }

@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import { newId, nextFeatureName } from '../doc/commands'
+import { evalStored } from '../doc/fieldInput'
 import { useProjectStore } from '../doc/store'
 import { ORIGIN_PLANES, ORIGIN_PLANE_LABELS } from '../doc/types'
 import type { DisplayUnit, OriginPlaneName, PlaneFeature, PlaneFrame, Ref, Vec3 } from '../doc/types'
@@ -115,7 +116,7 @@ export function usePlaneTool(kernel: KernelState, engine: ViewportEngine | null)
 
   let handle: ReactNode = null
   if (plane && baseFrame) {
-    const angleRad = ((Number(plane.params.angle) || 0) * Math.PI) / 180
+    const angleRad = ((evalStored(plane.params.angle) ?? 0) * Math.PI) / 180
     const c = Math.cos(angleRad)
     const s = Math.sin(angleRad)
     const tiltedNormal: Vec3 = [
@@ -123,7 +124,7 @@ export function usePlaneTool(kernel: KernelState, engine: ViewportEngine | null)
       baseFrame.normal[1] * c - baseFrame.yDir[1] * s,
       baseFrame.normal[2] * c - baseFrame.yDir[2] * s,
     ]
-    const off = Number(plane.params.offset)
+    const off = evalStored(plane.params.offset) ?? NaN
     handle = (
       <AxisDragHandle
         engine={engine}

@@ -64,7 +64,7 @@ test.describe('BUG-012 Enter applies from any field of a tool card', () => {
     await page.keyboard.press('Enter')
     await settle(page)
     await expect(c).toBeVisible()
-    await expect(c.getByText('Enter a number above zero.')).toBeVisible()
+    await expect(c.getByText('There is no variable called abc.')).toBeVisible()
     expect((await doc(page)).features).toHaveLength(before)
   })
 })

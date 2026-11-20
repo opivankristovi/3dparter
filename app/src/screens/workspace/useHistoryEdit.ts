@@ -1,5 +1,6 @@
 // Clicking a History row opens that step for editing: a sketch re-enters sketch mode, a modeling step opens its card.
 import { useEffect } from 'react'
+import { activeCount } from '../../doc/history'
 import { useProjectStore } from '../../doc/store'
 import { cloneForEdit, selectionForFeature, toolForFeature } from '../../modeling/logic'
 import { enterSketch } from '../../sketch/session'
@@ -13,9 +14,15 @@ export function useHistoryEdit() {
 
   useEffect(() => {
     if (!editingId) return
-    const f = features.find((x) => x.id === editingId)
+    const at = features.findIndex((x) => x.id === editingId)
+    const f = features[at]
     if (!f) return
     const s = useProjectStore.getState()
+    // A step after the rollback marker is not built, so it cannot be edited.
+    if (at >= activeCount(s.doc)) {
+      s.setEditingFeature(null)
+      return
+    }
     if (f.type === 'sketch') {
       if (activeSketchId !== f.id) {
         enterSketch(f.id)

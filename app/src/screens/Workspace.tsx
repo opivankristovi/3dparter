@@ -23,7 +23,8 @@ import { SettingsDialog } from './dialogs/SettingsDialog'
 import { NotFound } from './NotFound'
 import { SaveChip } from './workspace/SaveChip'
 import { WorkspaceView } from './workspace/WorkspaceView'
-import { HistoryTab, ItemsTab, VariablesTab } from './workspace/SidebarTabs'
+import { HistoryTab, ItemsTab } from './workspace/SidebarTabs'
+import { VariablesPanel } from './workspace/VariablesPanel'
 import { ViewColumn } from './workspace/ViewColumn'
 import type { FeatureStatuses } from './workspace/SidebarTabs'
 import { useToolStore } from './workspace/toolStore'
@@ -192,7 +193,7 @@ function Shell({
       tabs={[
         { value: 'history', label: 'History', content: <HistoryTab statuses={statuses} /> },
         { value: 'items', label: 'Items', content: <ItemsTab /> },
-        { value: 'variables', label: 'Variables', content: <VariablesTab /> },
+        { value: 'variables', label: 'Variables', content: <VariablesPanel /> },
       ]}
     />
   )

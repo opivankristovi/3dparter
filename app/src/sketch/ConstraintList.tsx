@@ -8,7 +8,7 @@ import { useToolStore } from '../screens/workspace/toolStore'
 import { IconButton } from '../ui/IconButton'
 import { cn } from '../ui/cn'
 import { deleteConstraints } from './commands'
-import { CONSTRAINT_NAMES, labelText } from './dimensions'
+import { CONSTRAINT_NAMES, dimensionLabel, labelText } from './dimensions'
 import { isDimensional } from './solver/constraints'
 import { measureConstraint } from './solver/measure'
 import { parseRef } from './solver/refs'
@@ -35,7 +35,7 @@ function summary(c: SketchConstraint, sketch: Sketch, units: Parameters<typeof l
   const what = c.entityIds.map((r) => describeRef(r, sketch)).join(', ')
   if (!isDimensional(c.type)) return what
   const v = c.driving ? evalValue(c.value, scopeOf(useProjectStore.getState().doc)) : (measureConstraint(sketch, c) ?? NaN)
-  const text = Number.isFinite(v) ? labelText(c.type, v, units) : ''
+  const text = Number.isFinite(v) ? dimensionLabel(c.type, c.driving ? c.value : undefined, v, units) : ''
   return `${c.driving ? text : `(${text})`} · ${what}`
 }
 

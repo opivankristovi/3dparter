@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type { ReactNode } from 'react'
 import { ArrowUpFromLine } from 'lucide-react'
 import { newId, nextFeatureName } from '../doc/commands'
+import { evalStored } from '../doc/fieldInput'
 import { useProjectStore } from '../doc/store'
 import { ORIGIN_PLANES } from '../doc/types'
 import type { BodyAppearance, BooleanMode, DisplayUnit, ExtrudeFeature, OriginPlaneName, Ref, Vec3 } from '../doc/types'
@@ -184,7 +185,7 @@ export function useExtrudeTool(kernel: KernelState, engine: ViewportEngine | nul
     if (!reg) return null
     const n = frame.normal
     const dir: Vec3 = extrude.params.direction === -1 ? [-n[0], -n[1], -n[2]] : n
-    const dist = Number(extrude.params.distance)
+    const dist = evalStored(extrude.params.distance) ?? NaN
     return {
       origin: regionCenter(reg),
       dir,

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Scan } from 'lucide-react'
 import { saveThumbnail } from '../../data/projects'
+import { reportSettled } from '../../doc/moveGuard'
 import { useProjectStore } from '../../doc/store'
 import type { OriginPlaneName, Ref } from '../../doc/types'
 import { ORIGIN_PLANE_LABELS } from '../../doc/types'
@@ -100,6 +101,14 @@ export function WorkspaceView() {
   const transform = useTransformTool(kernel, engine)
   const plane = usePlaneTool(kernel, engine)
   useHistoryEdit()
+  // After every finished regenerate: a move that broke a step that built before is put back.
+  useEffect(() => {
+    if (kernel.settled === 0) return
+    const message = reportSettled(kernel.settledFor.order, kernel.settledFor.rollbackIndex, kernel.statuses)
+    if (message) toast({ title: message })
+    // Only a finished regenerate asks the question.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [kernel.settled])
   useSolverInit()
   const solverReady = useSketchUi((s) => s.solver === 'ready')
 

@@ -81,7 +81,7 @@ test.describe('M2 edge cases: fillet and chamfer', () => {
 
     await radius.fill('abc')
     await radius.blur()
-    await expect(c.getByText('Enter a number above zero.')).toBeVisible()
+    await expect(c.getByText('There is no variable called abc.')).toBeVisible()
     await expect(apply).toBeDisabled()
     await radius.focus()
     await page.keyboard.press('Enter')

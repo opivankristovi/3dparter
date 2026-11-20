@@ -15,11 +15,16 @@ const DEBOUNCE_MS = 30
 /** The document plus the draft: appended if new, swapped in place if it replaces an existing step. */
 export function effectiveDocument(doc: ProjectDocument, draft: Feature | null, replaces: string | null): ProjectDocument {
   if (!draft || !isPreviewable(draft)) return doc
-  const features =
-    replaces && doc.features.some((f) => f.id === replaces)
-      ? doc.features.map((f) => (f.id === replaces ? draft : f))
-      : [...doc.features, draft]
-  return { ...doc, features }
+  if (replaces && doc.features.some((f) => f.id === replaces)) {
+    return { ...doc, features: doc.features.map((f) => (f.id === replaces ? draft : f)) }
+  }
+  // A new step goes right after the rollback marker, like the step it will become.
+  const r = doc.rollbackIndex
+  if (r !== null && r < doc.features.length - 1) {
+    const at = Math.max(-1, r) + 1
+    return { ...doc, features: [...doc.features.slice(0, at), draft, ...doc.features.slice(at)], rollbackIndex: at }
+  }
+  return { ...doc, features: [...doc.features, draft], rollbackIndex: null }
 }
 
 function sketchSignature(f: Feature, frame: PlaneFrame | null | undefined): string {
@@ -41,6 +46,8 @@ export interface KernelState {
   busy: boolean
   /** Counts up after each regenerate that finished and applied. */
   settled: number
+  /** The steps (in order) and marker the last applied result was computed for. */
+  settledFor: { order: string[]; rollbackIndex: number | null }
   /** Bodies that exist after the last regenerate (a body consumed by a Combine is not among them). */
   bodies: string[]
   /** True when the result on screen is for the draft as it is right now (not for an earlier edit of it). */
@@ -57,6 +64,7 @@ export function useKernel(doc: ProjectDocument, draft: Feature | null, draftRepl
   const [planes, setPlanes] = useState<{ name: string; frame: PlaneFrame }[]>([])
   const [busy, setBusy] = useState(false)
   const [settled, setSettled] = useState(0)
+  const [settledFor, setSettledFor] = useState<{ order: string[]; rollbackIndex: number | null }>({ order: [], rollbackIndex: null })
   const [bodies, setBodies] = useState<string[]>([])
   /** The draft object the applied result was computed for. */
   const settledDraft = useRef<Feature | null>(null)
@@ -177,6 +185,7 @@ export function useKernel(doc: ProjectDocument, draft: Feature | null, draftRepl
         setMeshes(nextMeshes)
         setRegions(nextRegions)
         setStatuses(st)
+        setSettledFor({ order: effective.features.map((f) => f.id), rollbackIndex: effective.rollbackIndex })
         setBusy(false)
         setSettled((n) => n + 1)
       } catch (e) {
@@ -197,5 +206,5 @@ export function useKernel(doc: ProjectDocument, draft: Feature | null, draftRepl
     return cur !== null && isPreviewable(cur) && cur === settledDraft.current
   }, [])
 
-  return { engine, error, retry, statuses, meshes, regions, planes, busy, settled, bodies, isDraftCurrent }
+  return { engine, error, retry, statuses, meshes, regions, planes, busy, settled, settledFor, bodies, isDraftCurrent }
 }

@@ -1,4 +1,6 @@
 // Document commands. Each one is exactly one undo step (one call to store.apply).
+import { activeCount, canMove, describeMove, moveOutcome, reorder, rollbackFromCount } from './history'
+import { expectMove } from './moveGuard'
 import { useProjectStore } from './store'
 import type { Feature, ProjectDocument } from './types'
 
@@ -66,7 +68,15 @@ function syncBodyEntry(draft: ProjectDocument, f: Feature) {
 
 export function addFeature(feature: Feature, label = `Add ${feature.name}`) {
   useProjectStore.getState().apply(label, (draft) => {
-    draft.features.push(feature)
+    // While rolled back, a new step goes right after the marker and the marker takes it in.
+    const r = draft.rollbackIndex
+    if (r !== null && r < draft.features.length - 1) {
+      draft.features.splice(Math.max(-1, r) + 1, 0, feature)
+      draft.rollbackIndex = Math.max(-1, r) + 1
+    } else {
+      draft.features.push(feature)
+      draft.rollbackIndex = null
+    }
     syncBodyEntry(draft, feature)
   })
 }
@@ -93,7 +103,11 @@ export function deleteFeature(id: string) {
     for (const key of Object.keys(draft.bodies)) {
       if (key.startsWith(prefix)) delete draft.bodies[key]
     }
-    if (draft.rollbackIndex !== null) draft.rollbackIndex = Math.min(draft.rollbackIndex, draft.features.length)
+    // An active step leaves: one fewer before the marker. A step after the marker changes nothing.
+    if (draft.rollbackIndex !== null) {
+      const r = idx <= draft.rollbackIndex ? draft.rollbackIndex - 1 : draft.rollbackIndex
+      draft.rollbackIndex = r >= draft.features.length - 1 ? null : r
+    }
   })
 }
 
@@ -110,5 +124,50 @@ export function setBodyVisible(bodyId: string, visible: boolean) {
   useProjectStore.getState().apply(visible ? 'Show body' : 'Hide body', (draft) => {
     const b = draft.bodies[bodyId]
     if (b) b.visible = visible
+  })
+}
+
+export type MoveResult = { ok: true; message: string } | { ok: false; message: string }
+
+/**
+ * Moves a step so that it ends up at `toIndex`. The names decide first (history.ts); an impossible move changes
+ * nothing. The kernel check afterwards (moveGuard.ts) puts the move back if a step that built now fails.
+ * The moved step keeps its side of the rollback marker unless it crosses a step on the other side, or `active` says.
+ */
+export function moveFeature(id: string, toIndex: number, opts?: { active?: boolean }): MoveResult {
+  const store = useProjectStore.getState()
+  const before = store.doc
+  const from = before.features.findIndex((f) => f.id === id)
+  if (from < 0) return { ok: false, message: 'That step is gone.' }
+  const check = canMove(before, from, toIndex)
+  if (!check.ok) return check
+  const n = before.features.length
+  const outcome = moveOutcome(n, activeCount(before), from, toIndex, opts?.active)
+  const rollbackIndex = rollbackFromCount(outcome.active, n)
+  if (from === toIndex && rollbackIndex === before.rollbackIndex) return { ok: true, message: describeMove(before, from, toIndex) }
+  const name = before.features[from].name
+  let message = describeMove(before, from, toIndex)
+  const wasActive = from < activeCount(before)
+  const nowActive = toIndex < outcome.active
+  if (before.rollbackIndex !== null || rollbackIndex !== null) {
+    if (wasActive && !nowActive) message += ' It is now after the end of history.'
+    else if (!wasActive && nowActive) message += ' It is now before the end of history.'
+  }
+  store.apply(`Move ${name}`, (draft) => {
+    draft.features = reorder(draft.features, from, toIndex)
+    draft.rollbackIndex = rollbackIndex
+  })
+  expectMove(before, id, name)
+  return { ok: true, message }
+}
+
+/**
+ * Puts the rollback marker after step `index` (the last active step); null (or the last step) shows every step.
+ * Nothing is deleted. -1 means no step is active.
+ */
+export function setRollback(index: number | null) {
+  useProjectStore.getState().apply('Roll back', (draft) => {
+    const n = draft.features.length
+    draft.rollbackIndex = index === null || index >= n - 1 ? null : Math.max(-1, Math.trunc(index))
   })
 }

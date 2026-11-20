@@ -30,6 +30,8 @@ export interface ProjectState {
   apply(label: string, recipe: (draft: ProjectDocument) => void): void
   undo(): void
   redo(): void
+  /** Forgets the redo steps (used after an automatic put-back, so Redo cannot replay a rejected change). */
+  discardRedo(): void
   rename(name: string): Promise<void>
   setSelection(refs: Ref[]): void
   setActiveTool(tool: string | null): void
@@ -192,6 +194,11 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
       undoStack.push(entry)
       set({ doc: applyPatches(get().doc, entry.patches) })
       afterDocChange()
+    },
+
+    discardRedo() {
+      redoStack = []
+      syncFlags()
     },
 
     async rename(name) {

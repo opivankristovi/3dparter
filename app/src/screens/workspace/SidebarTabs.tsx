@@ -1,15 +1,14 @@
-import { useMemo, useState } from 'react'
-import { ArrowUpFromLine, Box, History, PenLine, Variable } from 'lucide-react'
-import { deleteFeature, renameFeature, setBodyVisible } from '../../doc/commands'
+import { useMemo } from 'react'
+import { ArrowUpFromLine, Box, PenLine, Variable } from 'lucide-react'
+import { setBodyVisible } from '../../doc/commands'
 import { useProjectStore } from '../../doc/store'
 import type { Feature } from '../../doc/types'
 import { handlePick } from '../../modeling/picking'
-import { ConstraintList } from '../../sketch/ConstraintList'
-import { ContextMenu } from '../../ui/ContextMenu'
 import { EmptyState } from '../../ui/EmptyState'
 import { ChamferIcon, CombineIcon, FilletIcon, MoveIcon, PlaneIcon, RevolveIcon, ShellIcon } from '../../ui/ModelIcons'
 import { Tree } from '../../ui/Tree'
 import type { TreeNode } from '../../ui/Tree'
+import { HistoryList } from './HistoryList'
 import { useToolStore } from './toolStore'
 
 export type FeatureStatuses = Record<string, { ok: boolean; message?: string; warning?: string }>
@@ -40,67 +39,7 @@ function featureIcon(type: Feature['type']) {
 }
 
 export function HistoryTab({ statuses }: { statuses?: FeatureStatuses }) {
-  const features = useProjectStore((s) => s.doc.features)
-  const rollbackIndex = useProjectStore((s) => s.doc.rollbackIndex)
-  const editingId = useProjectStore((s) => s.editingFeatureId)
-  const setEditing = useProjectStore((s) => s.setEditingFeature)
-  const [menuId, setMenuId] = useState<string | null>(null)
-
-  const nodes: TreeNode[] = useMemo(
-    () =>
-      features.map((f, idx) => {
-        const st = statuses?.[f.id]
-        return {
-          id: f.id,
-          label: f.name,
-          icon: featureIcon(f.type),
-          suppressed: f.suppressed,
-          beyondRollback: rollbackIndex !== null && idx >= rollbackIndex,
-          error: st && !st.ok ? (st.message ?? 'This step could not be built.') : undefined,
-          warning: st?.ok ? st.warning : undefined,
-        }
-      }),
-    [features, statuses, rollbackIndex],
-  )
-
-  if (features.length === 0) {
-    return (
-      <EmptyState
-        icon={<History strokeWidth={1.75} />}
-        title="Nothing here yet"
-        description="Every sketch and solid you make shows up here, ready to edit."
-      />
-    )
-  }
-
-  return (
-    <>
-      <ContextMenu
-        items={[
-          { label: 'Edit', onSelect: () => menuId && setEditing(menuId) },
-          { type: 'separator' },
-          { label: 'Delete', shortcut: 'Del', danger: true, onSelect: () => menuId && deleteFeature(menuId) },
-        ]}
-      >
-        <div
-          onContextMenuCapture={(e) => {
-            const row = (e.target as HTMLElement).closest<HTMLElement>('[data-tree-id]')
-            setMenuId(row?.dataset.treeId ?? null)
-          }}
-        >
-          <Tree
-            label="History"
-            nodes={nodes}
-            selectedId={editingId ?? undefined}
-            onSelect={setEditing}
-            onRename={renameFeature}
-            onDelete={deleteFeature}
-          />
-        </div>
-      </ContextMenu>
-      <ConstraintList />
-    </>
-  )
+  return <HistoryList statuses={statuses} icons={featureIcon} />
 }
 
 export function ItemsTab() {

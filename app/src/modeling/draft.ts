@@ -1,9 +1,13 @@
 // Shared steps for every tool that previews a feature as a draft and applies it as one undo step.
 import { useRef, useState } from 'react'
 import { addFeature, updateFeatureParams } from '../doc/commands'
+import { checkFieldText } from '../doc/fieldInput'
+import type { FieldRule } from '../doc/fieldInput'
+import { exprToFieldText } from '../doc/fieldText'
 import { useProjectStore } from '../doc/store'
 import type { DisplayUnit, Feature } from '../doc/types'
-import { formatDisplay, parseDisplay, toExpr } from '../doc/units'
+import { useVariableSuggestions } from '../doc/useVariableSuggestions'
+import type { FieldFeedback } from '../ui/NumericInput'
 import { useToolStore } from '../screens/workspace/toolStore'
 
 /** Drops the open draft without touching the document. */
@@ -33,37 +37,44 @@ export function changeDraft<T extends Feature>(type: T['type'], partial: Partial
 }
 
 /**
- * Shared state for numeric inputs that hold back Apply while their text is invalid.
+ * Shared state for numeric inputs that take a number or an expression and hold back Apply while their text is
+ * invalid. A plain number is typed in the display unit; anything else is an expression kept as typed.
  * `typedNow` mirrors the typed text synchronously: Enter in the field commits and applies in the same event,
  * before React re-renders, so Apply must not trust the `disabled` state it was rendered with.
  */
 function useGuardedInput(
   expr: string,
   unit: string,
-  format: (n: number) => string,
-  parse: (text: string) => number | null,
-  errorText: string,
+  units: DisplayUnit,
+  rule: FieldRule,
   onChange: (expr: string) => void,
 ) {
   const [typed, setTypedState] = useState<string | null>(null)
   const typedNow = useRef<string | null>(null)
+  const suggestions = useVariableSuggestions(units)
   const setTyped = (t: string | null) => {
     typedNow.current = t
     setTypedState(t)
   }
-  const n = Number(expr)
+  const check = (text: string): FieldFeedback => {
+    const r = checkFieldText(text, units, rule)
+    if (!r.ok) return { error: r.message }
+    return r.isExpression ? { preview: r.preview } : {}
+  }
   const field = {
     unit,
-    value: typed ?? (Number.isFinite(n) ? format(n) : expr),
-    error: typed !== null ? errorText : undefined,
+    value: typed ?? exprToFieldText(expr, units, rule.kind),
+    error: typed !== null ? check(typed).error : undefined,
+    check,
+    suggestions,
     onValueChange: (text: string) => {
-      const v = parse(text)
-      if (v === null) {
+      const r = checkFieldText(text, units, rule)
+      if (!r.ok) {
         setTyped(text)
         return
       }
       setTyped(null)
-      onChange(toExpr(v))
+      onChange(r.expr)
     },
   }
   return {
@@ -80,48 +91,15 @@ function useGuardedInput(
 
 /** A positive length field in display units. */
 export function useLengthInput(expr: string, units: DisplayUnit, onChange: (expr: string) => void) {
-  return useGuardedInput(
-    expr,
-    units,
-    (mm) => formatDisplay(mm, units),
-    (text) => {
-      const v = parseDisplay(text, units)
-      return v !== null && v > 0 ? v : null
-    },
-    'Enter a number above zero.',
-    onChange,
-  )
+  return useGuardedInput(expr, units, units, { kind: 'length', positive: true }, onChange)
 }
 
 /** A signed length field in display units (negative, zero or positive). */
 export function useSignedLengthInput(expr: string, units: DisplayUnit, onChange: (expr: string) => void) {
-  return useGuardedInput(
-    expr,
-    units,
-    (mm) => formatDisplay(mm, units),
-    (text) => {
-      const v = parseDisplay(text, units)
-      return v !== null && Number.isFinite(v) ? v : null
-    },
-    'Enter a number.',
-    onChange,
-  )
+  return useGuardedInput(expr, units, units, { kind: 'length' }, onChange)
 }
 
 /** An angle field in degrees. With `positiveMax360`, requires 0 < angle <= 360. */
 export function useAngleInput(expr: string, onChange: (expr: string) => void, opts?: { positiveMax360?: boolean }) {
-  const positiveMax360 = opts?.positiveMax360 ?? false
-  return useGuardedInput(
-    expr,
-    '°',
-    (deg) => formatDisplay(deg, 'mm'),
-    (text) => {
-      const v = parseDisplay(text, 'mm')
-      if (v === null || !Number.isFinite(v)) return null
-      if (positiveMax360 && (v <= 0 || v > 360)) return null
-      return v
-    },
-    positiveMax360 ? 'Enter an angle between 0 and 360.' : 'Enter a number.',
-    onChange,
-  )
+  return useGuardedInput(expr, '°', 'mm', { kind: 'angle', upTo360: opts?.positiveMax360 ?? false }, onChange)
 }

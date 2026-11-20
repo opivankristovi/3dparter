@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { newId, nextFeatureName } from '../doc/commands'
+import { evalStored } from '../doc/fieldInput'
 import { useProjectStore } from '../doc/store'
 import type { BodyAppearance, DisplayUnit, Ref, TransformFeature, Vec3 } from '../doc/types'
 import { toExpr } from '../doc/units'
@@ -198,7 +199,7 @@ function TransformCard({
   const my = useSignedLengthInput(p.translate[1], units, (v) => setTranslate(1, v))
   const mz = useSignedLengthInput(p.translate[2], units, (v) => setTranslate(2, v))
   const angle = useAngleInput(p.rotate?.angle ?? '0', (a) => {
-    onChange({ rotate: Number(a) === 0 ? null : { axis: AXIS_VEC[rotAxis], pivot: [0, 0, 0], angle: a } })
+    onChange({ rotate: evalStored(a) === 0 ? null : { axis: AXIS_VEC[rotAxis], pivot: [0, 0, 0], angle: a } })
   })
 
   const noBodies = p.bodies.length === 0

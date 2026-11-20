@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, ReactNode } from 'react'
-import { ChevronDown, ChevronRight, CircleAlert, Eye, EyeOff, TriangleAlert } from 'lucide-react'
+import { ChevronDown, ChevronRight, CircleAlert, Eye, EyeOff, GripVertical, TriangleAlert } from 'lucide-react'
 import { Tooltip } from './Tooltip'
 import { cn } from './cn'
 
@@ -11,8 +11,14 @@ export interface TreeNode {
   children?: TreeNode[]
   hidden?: boolean
   suppressed?: boolean
-  /** Rows after the rollback marker. */
+  /** Rows after the rollback marker: dimmed, and announced as inactive. */
   beyondRollback?: boolean
+  /** Leaves a row-high gap above this row (room for a marker bar that sits between rows). */
+  spaceBefore?: boolean
+  /** The row is being dragged. */
+  dragging?: boolean
+  /** Extra controls at the end of the row (a menu button). Not part of the row's keyboard model. */
+  trailing?: ReactNode
   /** Reason shown in a tooltip next to the error glyph. */
   error?: string
   /** Non-fatal warning shown next to the warning glyph when there is no error. */
@@ -48,6 +54,8 @@ export interface TreeRowProps {
   renaming: boolean
   /** Drag-reorder insertion line (visual only). */
   insertion?: 'before' | 'after'
+  /** Shows a grip at the end of the row. It is the only part of a row a finger can drag. */
+  grip?: boolean
   onSelect: () => void
   onToggleExpand: () => void
   onToggleHidden?: () => void
@@ -65,6 +73,7 @@ export function TreeRow({
   focusable,
   renaming,
   insertion,
+  grip,
   onSelect,
   onToggleExpand,
   onToggleHidden,
@@ -77,6 +86,7 @@ export function TreeRow({
       role="treeitem"
       id={`tree-${node.id}`}
       data-tree-id={node.id}
+      data-inactive={node.beyondRollback ? '' : undefined}
       aria-level={level}
       aria-setsize={setSize}
       aria-posinset={posInSet}
@@ -88,7 +98,9 @@ export function TreeRow({
       className={cn(
         'group relative flex h-7 cursor-default items-center gap-1 rounded-sm pr-1 text-base',
         selected ? 'bg-accent-subtle text-accent' : 'hover:bg-surface-sunken',
-        node.beyondRollback && 'opacity-50',
+        node.beyondRollback && 'opacity-60',
+        node.spaceBefore && 'mt-7',
+        node.dragging && 'opacity-40',
       )}
     >
       {insertion ? (
@@ -142,6 +154,7 @@ export function TreeRow({
           )}
         >
           {node.label}
+          {node.beyondRollback ? <span className="sr-only"> (inactive, after the end of history)</span> : null}
         </span>
       )}
       {node.error ? (
@@ -158,6 +171,16 @@ export function TreeRow({
             <span className="sr-only">Warning: {node.warning}</span>
           </span>
         </Tooltip>
+      ) : null}
+      {node.trailing}
+      {grip ? (
+        <span
+          aria-hidden="true"
+          data-grip=""
+          className="flex size-5 shrink-0 cursor-grab touch-none items-center justify-center rounded-sm text-text-muted opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 pointer-coarse:size-7 pointer-coarse:opacity-100"
+        >
+          <GripVertical size={16} strokeWidth={1.75} />
+        </span>
       ) : null}
       {onToggleHidden ? (
         <button
@@ -192,6 +215,10 @@ export interface TreeProps {
   onToggleHidden?: (id: string) => void
   onRename?: (id: string, name: string) => void
   onDelete?: (id: string) => void
+  /** Alt+ArrowUp / Alt+ArrowDown on a row: move it one place. The caller does the move and keeps the focus. */
+  onMoveRow?: (id: string, delta: -1 | 1) => void
+  /** Rows show a drag grip (the caller handles the dragging). */
+  reorderable?: boolean
   className?: string
 }
 
@@ -206,6 +233,8 @@ export function Tree({
   onToggleHidden,
   onRename,
   onDelete,
+  onMoveRow,
+  reorderable,
   className,
 }: TreeProps) {
   const [expanded, setExpanded] = useState(() => new Set(defaultExpanded))
@@ -238,6 +267,13 @@ export function Tree({
     const cur = flat[idx]
     if (!cur) return
     const has = !!cur.node.children?.length
+    if (e.altKey && onMoveRow && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+      if (e.target === e.currentTarget || (e.target as HTMLElement).dataset.treeId === cur.node.id) {
+        onMoveRow(cur.node.id, e.key === 'ArrowUp' ? -1 : 1)
+        e.preventDefault()
+      }
+      return
+    }
     switch (e.key) {
       case 'ArrowDown':
         moveFocus(flat[Math.min(idx + 1, flat.length - 1)]?.node.id)
@@ -280,7 +316,18 @@ export function Tree({
   }
 
   return (
-    <div ref={root} role="tree" aria-label={label} onKeyDown={onKeyDown} className={cn('flex flex-col', className)}>
+    <div
+      ref={root}
+      role="tree"
+      aria-label={label}
+      onKeyDown={onKeyDown}
+      onFocus={(e) => {
+        // Focus that arrives by click or script becomes the roving row, so the arrows start from it.
+        const id = (e.target as HTMLElement).closest<HTMLElement>('[data-tree-id]')?.dataset.treeId
+        if (id && id !== focusId) setFocusId(id)
+      }}
+      className={cn('flex flex-col', className)}
+    >
       {flat.map((f) => (
         <TreeRow
           key={f.node.id}
@@ -291,6 +338,7 @@ export function Tree({
           expanded={expanded.has(f.node.id)}
           selected={selectedSet.has(f.node.id)}
           focusable={focusId === f.node.id}
+          grip={reorderable}
           renaming={renamingId === f.node.id}
           onSelect={() => {
             setFocusId(f.node.id)

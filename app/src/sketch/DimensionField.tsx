@@ -2,12 +2,19 @@
 // field and nothing changes), Esc closes it.
 import { useEffect, useRef, useState } from 'react'
 import type { CSSProperties, KeyboardEvent } from 'react'
+import { useProjectStore } from '../doc/store'
+import type { ConstraintType } from '../doc/types'
+import { useVariableSuggestions } from '../doc/useVariableSuggestions'
 import { NumericInput } from '../ui/NumericInput'
+import type { FieldFeedback } from '../ui/NumericInput'
+import { checkDimensionText } from './dimensions'
 import { cn } from '../ui/cn'
 
 export interface DimensionFieldProps {
   /** Accessible name for the field and its group, e.g. "Length". */
   label: string
+  /** Decides how the text is checked (a length or an angle). */
+  type: ConstraintType
   /** Shown after the number, e.g. "mm" or "°". */
   unit: string
   initial: string
@@ -20,9 +27,16 @@ export interface DimensionFieldProps {
   style?: CSSProperties
 }
 
-export function DimensionField({ label, unit, initial, onSubmit, onCancel, error, className, style }: DimensionFieldProps) {
+export function DimensionField({ label, type, unit, initial, onSubmit, onCancel, error, className, style }: DimensionFieldProps) {
   const root = useRef<HTMLDivElement>(null)
   const [failure, setFailure] = useState<string | undefined>(error)
+  const units = useProjectStore((s) => s.doc.units)
+  const suggestions = useVariableSuggestions(units)
+  const check = (text: string): FieldFeedback => {
+    const r = checkDimensionText(type, text, units)
+    if (!r.ok) return { error: r.message }
+    return r.isExpression ? { preview: r.preview } : {}
+  }
 
   useEffect(() => {
     const input = root.current?.querySelector('input')
@@ -52,7 +66,7 @@ export function DimensionField({ label, unit, initial, onSubmit, onCancel, error
       style={style}
       className={cn('pointer-events-auto w-48 rounded-md bg-surface-raised p-2 shadow-panel', className)}
     >
-      <NumericInput layout="inline" label={label} unit={unit} value={initial} error={failure} />
+      <NumericInput layout="inline" label={label} unit={unit} value={initial} error={failure} check={check} suggestions={suggestions} />
     </div>
   )
 }

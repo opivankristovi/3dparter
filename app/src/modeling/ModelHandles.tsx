@@ -2,6 +2,7 @@
 // Pure tokens; keyboard-accessible (arrow keys nudge the value).
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent } from 'react'
+import { evalStored } from '../doc/fieldInput'
 import type { DisplayUnit, Ref, Vec3 } from '../doc/types'
 import { formatDisplay } from '../doc/units'
 import type { MeshData } from '../kernel/api'
@@ -302,7 +303,7 @@ export function TransformGizmo({ engine, bodies, meshes, translate, units, onCha
   return (
     <>
       {axes.map((a) => {
-        const val = Number(translate[a.idx])
+        const val = evalStored(translate[a.idx]) ?? NaN
         return (
           <AxisDragHandle
             key={a.tone}

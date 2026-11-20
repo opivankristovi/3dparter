@@ -4,18 +4,21 @@ import { expect, test } from './fixtures'
 import {
   addRectangleSketch,
   applyExtrude,
+  blendEdges,
   bodyMeshes,
   buildBox,
   clickPickableNear,
   clickWorld,
   drawRectangle,
   extrudeCard,
+  historyItem,
   newProject,
   pickTopPlane,
   settle,
   toolButton,
   waitCameraStable,
 } from './helpers'
+import { PANEL_MOUNTED, addVariableInPanel, openVariables, variableCommand } from './variablesPanel'
 
 /** Scans the page; fails on moderate, serious and critical violations and lists every violation (id, impact, targets). */
 async function scan(page: Page, screen: string) {
@@ -163,5 +166,62 @@ test.describe('F01-E10 axe scans, M2 tool cards', () => {
     await expect(card(page, 'Plane')).toBeVisible()
     await settle(page)
     await scan(page, 'M2 Plane card')
+  })
+})
+
+test.describe('F03 axe scans, variables and expression fields', () => {
+  test('F03-E3 Variables panel with rows, an error and the empty state', async ({ page }) => {
+    test.fixme(!PANEL_MOUNTED, 'needs the panel mounted')
+    await newProject(page)
+    const panel = await openVariables(page)
+    await scan(page, 'S08 Variables panel (empty)')
+    await addVariableInPanel(page, panel, 'w', '40')
+    await addVariableInPanel(page, panel, 'a', '2 * w')
+    // A refused change shows its message on the field.
+    const expr = panel.getByRole('group', { name: 'Variable w', exact: true }).getByLabel('Expression')
+    await expr.fill('a')
+    await expr.press('Enter')
+    await expect(panel.getByText(/circle/).first()).toBeVisible()
+    await scan(page, 'S08 Variables panel (rows and an error)')
+  })
+
+  test('F03-E3 an expression field with an unknown name, and with the suggestion list open', async ({ page }) => {
+    await newProject(page)
+    await variableCommand(page, 'addVariable', 'width', '40')
+    await drawRectangle(page)
+    await page.getByRole('button', { name: 'Finish sketch' }).click()
+    await toolButton(page, 'Extrude').click()
+    const card = extrudeCard(page)
+    await expect(card).toBeVisible()
+    await waitCameraStable(page)
+    const distance = card.getByLabel('Distance')
+    await distance.fill('widht')
+    await expect(card.getByText('There is no variable called widht.')).toBeVisible()
+    await scan(page, 'F03 Extrude field with an error')
+    await distance.fill('wi')
+    await expect(page.getByRole('listbox', { name: 'Variables' })).toBeVisible()
+    await scan(page, 'F03 Extrude field with suggestions')
+    await distance.fill('width * 2')
+    await expect(card.getByText('= 80 mm')).toBeVisible()
+    await scan(page, 'F03 Extrude field with a preview')
+  })
+})
+
+test.describe('F02 axe scans, History', () => {
+  test('F02 History list rolled back: marker, dimmed rows, Show all steps', async ({ page }) => {
+    await newProject(page)
+    await buildBox(page)
+    await settle(page)
+    await waitCameraStable(page)
+    await blendEdges(page, 'Fillet', [[20, 0, 10]], '2')
+    await blendEdges(page, 'Chamfer', [[20, 20, 10]], '1')
+    const marker = page.getByRole('slider', { name: 'End of history' })
+    await marker.focus()
+    await page.keyboard.press('ArrowUp')
+    await page.keyboard.press('ArrowUp')
+    await expect(page.getByRole('button', { name: 'Show all steps' })).toBeVisible()
+    await expect(historyItem(page, 'Fillet 1')).toHaveAttribute('data-inactive', '')
+    await settle(page)
+    await scan(page, 'F02 History rolled back')
   })
 })

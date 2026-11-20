@@ -12,7 +12,7 @@ import { cn } from '../ui/cn'
 import type { ViewportEngine } from '../viewport/engine'
 import { submitDimensionEdit, submitPending } from './actions'
 import { DimensionField } from './DimensionField'
-import { CONSTRAINT_NAMES, labelText, valueToText } from './dimensions'
+import { CONSTRAINT_NAMES, dimensionLabel, editText } from './dimensions'
 import { localToWorld } from './geometry'
 import { refsOfSelection } from './pick'
 import { isDimensional } from './solver/constraints'
@@ -227,7 +227,7 @@ export function SketchOverlay({ engine, frame, sketchId, entities, constraints }
     if (!layout) return []
     const value = c.driving ? evalValue(c.value, scopeOf(useProjectStore.getState().doc)) : (measureConstraint(sketch, c) ?? NaN)
     if (!Number.isFinite(value)) return []
-    return [{ c, layout, text: `${DIM_PREFIX[c.type] ?? ''}${labelText(c.type, value, units)}`, value }]
+    return [{ c, layout, text: `${DIM_PREFIX[c.type] ?? ''}${dimensionLabel(c.type, c.driving ? c.value : undefined, value, units)}`, value }]
   })
 
   // Selected points get a ring (the entity itself is highlighted in the viewport).
@@ -305,8 +305,9 @@ export function SketchOverlay({ engine, frame, sketchId, entities, constraints }
             <DimensionField
               key={c.id}
               label={CONSTRAINT_NAMES[c.type]}
+              type={c.type}
               unit={c.type === 'angle' ? '°' : units}
-              initial={valueToText(c.type, value, units)}
+              initial={editText(c.type, c.driving ? c.value : undefined, value, units)}
               onSubmit={(t) => submitDimensionEdit(c.id, t)}
               onCancel={() => useSketchUi.getState().set({ editingId: null })}
               style={{ left: x, top: y }}
@@ -342,6 +343,7 @@ export function SketchOverlay({ engine, frame, sketchId, entities, constraints }
       {pending && pendingAt ? (
         <DimensionField
           label={CONSTRAINT_NAMES[pending.type]}
+          type={pending.type}
           unit={pending.type === 'angle' ? '°' : units}
           initial={pending.text}
           error={pending.error}

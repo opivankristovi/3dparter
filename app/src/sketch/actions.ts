@@ -7,7 +7,7 @@ import { useToolStore } from '../screens/workspace/toolStore'
 import type { ToastInput } from '../ui/Toast'
 import { addConstraint, deleteConstraints, deleteSketchEntities, setConstraintValue, toggleConstruction } from './commands'
 import type { ConstraintResult } from './commands'
-import { CONSTRAINT_NAMES, textToValue, valueToText } from './dimensions'
+import { CONSTRAINT_NAMES, checkDimensionText, valueToText } from './dimensions'
 import { dimensionFor, orderRefs, refsOfSelection, wholeEntityIds } from './pick'
 import { applicableConstraints } from './solver/applicable'
 import { detectArmStarts } from './solver/arms'
@@ -121,12 +121,12 @@ export function submitPending(text: string) {
   const c = current()
   if (!p || !c) return
   const units = useProjectStore.getState().doc.units
-  const value = textToValue(p.type, text, units)
-  if (value === null) {
-    ui.set({ pending: { ...p, text, error: 'Enter a number.' } })
+  const checked = checkDimensionText(p.type, text, units)
+  if (!checked.ok) {
+    ui.set({ pending: { ...p, text, error: checked.message } })
     return
   }
-  const r = addConstraint(c.sketchId, make(p.type, p.refs, value, p.arms))
+  const r = addConstraint(c.sketchId, make(p.type, p.refs, checked.expr, p.arms))
   if (!r.ok) {
     ui.set({ pending: { ...p, text, error: r.reason } })
     flash(r.conflicting)
@@ -141,9 +141,9 @@ export function submitDimensionEdit(constraintId: string, text: string): string 
   const old = c?.sketch.constraints.find((x) => x.id === constraintId)
   if (!c || !old) return 'This dimension is gone.'
   const units = useProjectStore.getState().doc.units
-  const value = textToValue(old.type, text, units)
-  if (value === null) return 'Enter a number.'
-  const r = setConstraintValue(c.sketchId, constraintId, value)
+  const checked = checkDimensionText(old.type, text, units)
+  if (!checked.ok) return checked.message
+  const r = setConstraintValue(c.sketchId, constraintId, checked.expr)
   if (!r.ok) {
     flash(r.conflicting)
     return r.reason
