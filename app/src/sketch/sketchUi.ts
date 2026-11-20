@@ -1,7 +1,7 @@
 // Sketch-mode UI state that is not part of the document: solver status, the live solve while dragging,
 // which constraints are selected or hovered, and the dimension editor that is open.
 import { create } from 'zustand'
-import type { DimensionalConstraintType, SketchEntity } from '../doc/types'
+import type { ArmStart, DimensionalConstraintType, SketchEntity } from '../doc/types'
 import type { EntityState } from './solver/defined'
 
 export type SolverStatus = 'idle' | 'loading' | 'ready' | 'error'
@@ -20,6 +20,8 @@ export interface DefinedInfo {
 export interface PendingDimension {
   type: DimensionalConstraintType
   refs: string[]
+  /** Angle only: where each line's arm starts, decided when the dimension was started. */
+  arms?: [ArmStart, ArmStart]
   text: string
   error?: string
 }

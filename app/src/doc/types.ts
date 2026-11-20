@@ -105,12 +105,22 @@ export type DimensionalConstraintType =
   | 'angle'
 export type ConstraintType = GeometricConstraintType | DimensionalConstraintType
 
+/** Which end of a line an angle arm starts at: its `a` end or its `b` end. */
+export type ArmStart = 'a' | 'b'
+
 export interface SketchConstraint {
   id: string
   type: ConstraintType
   entityIds: string[]
   value?: Expr
   driving: boolean
+  /**
+   * Only for `angle`: for each line (in entityIds order), the end where its arm STARTS; the arm runs from
+   * that end to the other end. Decided once when the dimension is created (a shared corner makes both arms
+   * leave it) and never re-derived, so adding or deleting a coincident later does not change what the angle
+   * means. Absent (older documents) = each line's own a -> b, the same as ['a', 'a'].
+   */
+  arms?: [ArmStart, ArmStart]
 }
 
 export interface Sketch {

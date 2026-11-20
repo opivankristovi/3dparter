@@ -204,15 +204,18 @@ export function SketchOverlay({ engine, frame, sketchId, entities, constraints }
   const glyphs = constraints.flatMap((c) => {
     const kind = GLYPH_OF[c.type]
     if (!kind || isDimensional(c.type) || isCorner(c)) return []
-    const where = refPoint(c.entityIds[0], ents)
-    if (!where) return []
-    const key = c.entityIds[0]
-    const n = slots.get(key) ?? 0
-    slots.set(key, n + 1)
-    const [x, y] = toScreen(where)
-    const dot = c.type === 'coincident'
-    // Glyphs sit beside their geometry, never on it, so points stay clickable.
-    return [{ c, kind, x: x + (dot ? 11 : n * 20), y: y - (dot ? 11 : 20) }]
+    // Equal and Parallel tie two lines, so each line gets a marker; both belong to the same constraint.
+    const refs = c.type === 'equal' || c.type === 'parallel' ? c.entityIds : c.entityIds.slice(0, 1)
+    return refs.flatMap((ref, i) => {
+      const where = refPoint(ref, ents)
+      if (!where) return []
+      const n = slots.get(ref) ?? 0
+      slots.set(ref, n + 1)
+      const [x, y] = toScreen(where)
+      const dot = c.type === 'coincident'
+      // Glyphs sit beside their geometry, never on it, so points stay clickable.
+      return [{ key: `${c.id}:${i}`, c, kind, x: x + (dot ? 11 : n * 20), y: y - (dot ? 11 : 20) }]
+    })
   })
 
   // ---- dimensions ----------------------------------------------------------------------------------
@@ -269,12 +272,12 @@ export function SketchOverlay({ engine, frame, sketchId, entities, constraints }
         )
       })}
 
-      {glyphs.map(({ c, kind, x, y }) => {
+      {glyphs.map(({ key, c, kind, x, y }) => {
         const selected = ui.selectedConstraintIds.includes(c.id)
         const state = conflictIds.has(c.id) ? 'conflict' : selected ? 'selected' : ui.hoverConstraintId === c.id ? 'hover' : 'default'
         return (
           <button
-            key={c.id}
+            key={key}
             type="button"
             aria-label={`${CONSTRAINT_NAMES[c.type]} constraint`}
             aria-pressed={selected}
@@ -314,6 +317,7 @@ export function SketchOverlay({ engine, frame, sketchId, entities, constraints }
           <button
             key={c.id}
             type="button"
+            data-sketch-dim=""
             aria-label={`${CONSTRAINT_NAMES[c.type]} dimension ${shown}${c.driving ? '' : ', reference'}`}
             aria-pressed={selected}
             style={{ left: x, top: y }}

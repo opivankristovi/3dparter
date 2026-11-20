@@ -204,6 +204,9 @@ export function useDrawTool(engine: ViewportEngine, live: MutableRefObject<LiveR
       if (!c) return
       const w = work.current
       w.cursor = c.point
+      // A tap has no pointer move before it, so the size fields are placed from the click itself.
+      const box = root.current?.getBoundingClientRect()
+      w.screen = [e.clientX - (box?.left ?? 0), e.clientY - (box?.top ?? 0)]
       if (!w.anchor) {
         Object.assign(w, { anchor: c.point, start: c.point, segments: 0 })
         refreshPreview()

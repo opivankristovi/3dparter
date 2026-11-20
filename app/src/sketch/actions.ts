@@ -2,7 +2,7 @@
 // open sketch and the current selection, so any of them can call it.
 import { newId } from '../doc/commands'
 import { useProjectStore } from '../doc/store'
-import type { ConstraintType, DimensionalConstraintType, Sketch, SketchConstraint, SketchFeature } from '../doc/types'
+import type { ArmStart, ConstraintType, DimensionalConstraintType, Sketch, SketchConstraint, SketchFeature } from '../doc/types'
 import { useToolStore } from '../screens/workspace/toolStore'
 import type { ToastInput } from '../ui/Toast'
 import { addConstraint, deleteConstraints, deleteSketchEntities, setConstraintValue, toggleConstruction } from './commands'
@@ -10,6 +10,7 @@ import type { ConstraintResult } from './commands'
 import { CONSTRAINT_NAMES, textToValue, valueToText } from './dimensions'
 import { dimensionFor, orderRefs, refsOfSelection, wholeEntityIds } from './pick'
 import { applicableConstraints } from './solver/applicable'
+import { detectArmStarts } from './solver/arms'
 import { isDimensional } from './solver/constraints'
 import { measureConstraint } from './solver/measure'
 import { useSketchUi } from './sketchUi'
@@ -54,12 +55,13 @@ export function reportRefusal(r: Extract<ConstraintResult, { ok: false }>) {
   flash(r.conflicting)
 }
 
-const make = (type: ConstraintType, refs: string[], value?: string): SketchConstraint => ({
+const make = (type: ConstraintType, refs: string[], value?: string, arms?: [ArmStart, ArmStart]): SketchConstraint => ({
   id: newId(),
   type,
   entityIds: refs,
   value,
   driving: true,
+  ...(arms ? { arms } : {}),
 })
 
 /** Applies a constraint type to the selection. Dimensions open the inline field instead. */
@@ -76,15 +78,25 @@ export function applyConstraint(type: ConstraintType) {
   if (!r.ok) reportRefusal(r)
 }
 
-function startDimension(type: DimensionalConstraintType, refs: string[], c: Current) {
-  const measured = measureConstraint(c.sketch, make(type, refs, '1'))
+function startDimension(type: DimensionalConstraintType, selected: string[], c: Current) {
+  let refs = selected
+  // The arms of an angle are decided here, once, from the corner the lines form now (never re-derived).
+  let arms = type === 'angle' ? (detectArmStarts(c.sketch, refs[0], refs[1]) ?? undefined) : undefined
+  let measured = measureConstraint(c.sketch, make(type, refs, '1', arms))
   if (measured === null) {
     toaster({ variant: 'error', title: 'This selection cannot be measured.' })
     return
   }
+  if (type === 'angle' && measured < 0) {
+    // The angle is signed (counter-clockwise from the first line to the second). Swap the lines (and their
+    // arm starts) so the stored and shown value is the positive angle inside the corner.
+    refs = [refs[1], refs[0]]
+    if (arms) arms = [arms[1], arms[0]]
+    measured = -measured
+  }
   const units = useProjectStore.getState().doc.units
   useSketchUi.getState().set({
-    pending: { type, refs, text: valueToText(type, measured, units) },
+    pending: { type, refs, arms, text: valueToText(type, measured, units) },
     editingId: null,
     selectedConstraintIds: [],
   })
@@ -114,7 +126,7 @@ export function submitPending(text: string) {
     ui.set({ pending: { ...p, text, error: 'Enter a number.' } })
     return
   }
-  const r = addConstraint(c.sketchId, make(p.type, p.refs, value))
+  const r = addConstraint(c.sketchId, make(p.type, p.refs, value, p.arms))
   if (!r.ok) {
     ui.set({ pending: { ...p, text, error: r.reason } })
     flash(r.conflicting)

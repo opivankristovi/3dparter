@@ -81,6 +81,8 @@ export function ConstraintBar({ engine, frame, sketchId, entities, constraints }
   const auto = useSketchUi((s) => s.autoConstraints)
   const bar = useRef<HTMLDivElement>(null)
   const [width, setWidth] = useState(0)
+  /** Vertical extent of the dimension labels on screen (px from the canvas top), or null without any. */
+  const [dimBand, setDimBand] = useState<[number, number] | null>(null)
 
   const refs = refsOfSelection(selection, sketchId)
   const sketch = { entities, constraints }
@@ -93,6 +95,13 @@ export function ConstraintBar({ engine, frame, sketchId, entities, constraints }
   useLayoutEffect(() => {
     const w = bar.current?.offsetWidth ?? 0
     if (w !== width) setWidth(w)
+    // Dimension labels can sit outside the geometry's bounds; the bar has to avoid them too.
+    const canvasTop = engine.canvas.getBoundingClientRect().top
+    const rects = [...document.querySelectorAll('[data-sketch-dim]')].map((el) => el.getBoundingClientRect())
+    const band: [number, number] | null = rects.length
+      ? [Math.min(...rects.map((r) => r.top)) - canvasTop, Math.max(...rects.map((r) => r.bottom)) - canvasTop]
+      : null
+    if (band?.[0] !== dimBand?.[0] || band?.[1] !== dimBand?.[1]) setDimBand(band)
   })
 
   // Where the selection is on screen.
@@ -118,8 +127,8 @@ export function ConstraintBar({ engine, frame, sketchId, entities, constraints }
             ],
       )
       const ys = all.map((p) => toScreen(p)[1] - rect.top)
-      const top = Math.min(...ys, selY)
-      const bottom = Math.max(...ys, selY)
+      const top = Math.min(...ys, selY, dimBand?.[0] ?? Infinity)
+      const bottom = Math.max(...ys, selY, dimBand?.[1] ?? -Infinity)
       const half = width / 2 + 8
       const preferBelow = selY > (top + bottom) / 2
       const below = preferBelow ? bottom + 120 < rect.height : top < 72

@@ -7,6 +7,7 @@
 //   constraint "k:<constraintId>" (+ "#<n>" when one constraint becomes several planegcs ones)
 import type { Constraint, SketchPrimitive } from '@salusoft89/planegcs'
 import type { Sketch, SketchConstraint, SketchEntity, Vec2 } from '../../doc/types'
+import { angleArms } from './arms'
 import { isDimensional } from './constraints'
 import { getPoint, parseRef, pointSlots } from './refs'
 import type { PointSlot } from './refs'
@@ -97,6 +98,7 @@ function mapConstraint(
   c: SketchConstraint,
   resolve: (ref: string) => Res | null,
   entities: Map<string, SketchEntity>,
+  sketch: Sketch,
 ): Maker[] | string {
   const refs = c.entityIds.map(resolve)
   if (refs.some((r) => r === null)) return 'Refers to something that no longer exists'
@@ -248,7 +250,14 @@ function mapConstraint(
     case 'angle': {
       if (n !== 2 || r[0].k !== 'line' || r[1].k !== 'line') return bad()
       const [l1, l2] = [r[0], r[1]]
-      return [(id) => ({ id, type: 'l2l_angle_ll', l1_id: l1.id, l2_id: l2.id, angle: value * DEG })]
+      const arms = angleArms(sketch, c)
+      if (!arms) return [(id) => ({ id, type: 'l2l_angle_ll', l1_id: l1.id, l2_id: l2.id, angle: value * DEG })]
+      const [a1, a2] = [arms[0].map((x) => resolve(x)), arms[1].map((x) => resolve(x))]
+      if (![...a1, ...a2].every((x) => x?.k === 'pt')) return bad()
+      const [p1, q1, p2, q2] = [...a1, ...a2] as Pt[]
+      return [
+        (id) => ({ id, type: 'l2l_angle_pppp', l1p1_id: p1.id, l1p2_id: q1.id, l2p1_id: p2.id, l2p2_id: q2.id, angle: value * DEG }),
+      ]
     }
   }
 }
@@ -345,7 +354,7 @@ export function buildSystem(sketch: Sketch, opts: BuildOptions = {}): BuiltSyste
   // Constraints
   for (const c of sketch.constraints) {
     if (!c.driving || c.type === 'fix') continue
-    const made = mapConstraint(c, resolve, entities)
+    const made = mapConstraint(c, resolve, entities, sketch)
     if (typeof made === 'string') {
       invalid.set(c.id, made)
       continue

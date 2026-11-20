@@ -2,6 +2,9 @@
 // Render on demand: a frame is drawn only when something changed or the camera moves.
 import * as THREE from 'three'
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js'
+import { LineSegments2 } from 'three/addons/lines/LineSegments2.js'
+import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js'
 import { createPickGeometry } from './pickGeometry'
 import { ORIGIN_PLANES, ORIGIN_PLANE_LABELS } from '../doc/types'
 import type { OriginPlaneName, PlaneFrame, ProjectDocument, Ref, SketchEntity, Vec2, Vec3 } from '../doc/types'
@@ -82,6 +85,9 @@ interface RegionObj {
 }
 
 const PLANE_SIZE = 80
+/** Widths of the sketch hover and selection marks, in CSS pixels. */
+const SELECT_LINE_WIDTH = 4
+const HOVER_LINE_WIDTH = 3
 const DEFAULT_DIR = new THREE.Vector3(1, -1, 0.8).normalize()
 const DEFAULT_DISTANCE = 250
 
@@ -161,8 +167,10 @@ export class ViewportEngine {
   })
   private cameraListeners = new Set<() => void>()
   private regionLineMat = new THREE.LineBasicMaterial({ depthTest: false, transparent: true, opacity: 0.8 })
-  private hoverLineMat = new THREE.LineBasicMaterial({ depthTest: false })
-  private selectLineMat = new THREE.LineBasicMaterial({ depthTest: false })
+  // Wide screen-space lines (WebGL ignores `linewidth` on basic lines). `resolution` is the CSS size of the
+  // canvas, so `linewidth` is in CSS pixels.
+  private hoverLineMat = new LineMaterial({ depthTest: false, linewidth: HOVER_LINE_WIDTH })
+  private selectLineMat = new LineMaterial({ depthTest: false, linewidth: SELECT_LINE_WIDTH })
   private previewMat = new THREE.LineBasicMaterial({ depthTest: false })
   private gridMinorMat = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.18 })
   private gridMajorMat = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.4 })
@@ -380,6 +388,8 @@ export class ViewportEngine {
     if (w === 0 || h === 0) return
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2))
     this.renderer.setSize(w, h, false)
+    this.hoverLineMat.resolution.set(w, h)
+    this.selectLineMat.resolution.set(w, h)
     this.camera.aspect = w / h
     this.camera.updateProjectionMatrix()
     this.requestRender()
@@ -761,11 +771,13 @@ export class ViewportEngine {
   setSketchMarks(frame: PlaneFrame | null, hover: SketchEntity[], selected: SketchEntity[]) {
     this.disposeChildren(this.marksGroup)
     if (frame) {
-      const add = (ents: SketchEntity[], mat: THREE.LineBasicMaterial, order: number) => {
+      const add = (ents: SketchEntity[], mat: LineMaterial, order: number) => {
         const seg: number[] = []
         for (const e of ents) seg.push(...entitySegments(e, frame))
         if (seg.length === 0) return
-        const l = new THREE.LineSegments(lineGeometry(seg), mat)
+        const geo = new LineSegmentsGeometry()
+        geo.setPositions(seg)
+        const l = new LineSegments2(geo, mat)
         l.renderOrder = order
         l.frustumCulled = false
         this.marksGroup.add(l)
