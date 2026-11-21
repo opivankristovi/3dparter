@@ -3,6 +3,7 @@
 // open the text is drawn live through the sketch preview; the document changes only when the card applies.
 import { useEffect, useRef } from 'react'
 import type { MutableRefObject } from 'react'
+import { useSettings } from '../../app/useSettings'
 import { newId } from '../../doc/commands'
 import { useProjectStore } from '../../doc/store'
 import type { SketchEntity, TextEntity, Vec2 } from '../../doc/types'
@@ -10,7 +11,7 @@ import { isTypingTarget } from '../../screens/workspace/hooks'
 import type { ViewportEngine } from '../../viewport/engine'
 import { currentSketch } from '../actions'
 import { dragState } from '../drag'
-import { entityAt, localToWorld, snapPoint, snapTargets } from '../geometry'
+import { entityAt, localToWorld, noGridFor, snapPoint, snapTargets } from '../geometry'
 import { refsOfSelection, wholeEntityIds } from '../pick'
 import { useSketchUi } from '../sketchUi'
 import type { LiveRefs } from '../useDrawTool'
@@ -106,7 +107,7 @@ export function useTextTool(engine: ViewportEngine, live: MutableRefObject<LiveR
         open(sk.sketchId, hit, false)
         return
       }
-      const p = snapPoint(at.raw, snapTargets(sk.sketch.entities), at.ppm, { noGrid: e.altKey })
+      const p = snapPoint(at.raw, snapTargets(sk.sketch.entities), at.ppm, { noGrid: noGridFor(useSettings.getState().settings.gridSnap, e.altKey) })
       open(
         sk.sketchId,
         {

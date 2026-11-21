@@ -18,6 +18,9 @@ import { SegmentedControl } from '../ui/SegmentedControl'
 import { applyDraft, cancelDraft, changeDraft } from './draft'
 import { bodyOfFace, countLabel, refsOfKind, sameRefSet } from './logic'
 
+/** A number followed by a unit ("2in", "3 mm"): a factor is unitless, so this is refused. */
+const UNIT_SUFFIX = /[\d.]\s*(mm|cm|m|in|ft|deg)(?![a-z0-9_])/i
+
 const FACTOR_MESSAGE = 'Enter a scale factor above zero, such as 2 for double size.'
 
 /** A unitless factor field: a number or an expression that comes out above zero. */
@@ -32,6 +35,7 @@ function useFactorInput(expr: string, onChange: (expr: string) => void) {
   const parse = (text: string): { ok: true; expr: string; isExpr: boolean; value: number } | { ok: false; message: string } => {
     const trimmed = text.trim()
     if (!trimmed) return { ok: false, message: FACTOR_MESSAGE }
+    if (UNIT_SUFFIX.test(trimmed)) return { ok: false, message: 'A scale factor has no unit. Type a plain number, such as 2.' }
     const r = evalExpr(trimmed, scopeOf(useProjectStore.getState().doc))
     if (!r.ok) return { ok: false, message: r.message }
     if (!Number.isFinite(r.value) || r.value <= 0) return { ok: false, message: FACTOR_MESSAGE }

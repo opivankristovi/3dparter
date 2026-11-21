@@ -470,6 +470,8 @@ export function WorkspaceView() {
         ? 'a face'
         : 'a plane'
 
+  // The Text card sits where these would be: hide them until it is applied or cancelled (BUG-032).
+  const sketchStatus = sketching && !textCard
   let hint: ReactNode = null
   if (kernel.engine === 'loading') {
     hint = (
@@ -478,7 +480,7 @@ export function WorkspaceView() {
         <ProgressIndicator label="Loading geometry engine" className="w-20 rounded-pill" />
       </Chip>
     )
-  } else if (sketching) {
+  } else if (sketchStatus) {
     hint = (
       <Chip>
         Sketching on {planeLabel}
@@ -537,13 +539,13 @@ export function WorkspaceView() {
           </Button>
         </div>
       ) : null}
-      {sketching ? (
+      {sketchStatus ? (
         <Button variant="primary" onClick={finishSketch}>
           Finish sketch
         </Button>
       ) : null}
-      {sketching ? <SketchStatus /> : null}
-      {sketching ? <SnapControl /> : null}
+      {sketchStatus ? <SketchStatus /> : null}
+      {sketchStatus ? <SnapControl /> : null}
       {suggested.length > 0 ? (
         <div
           role="toolbar"
