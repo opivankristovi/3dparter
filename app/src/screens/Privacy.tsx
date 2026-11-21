@@ -28,6 +28,7 @@ export default function Privacy() {
 
       <Section id="files" title="Files you import">
         <p>When you import a STEP, STL or 3MF file, it is read and turned into a model on your device. The file is not sent to a server.</p>
+        <p>For STL and 3MF files, 3DParter also keeps a converted copy in your browser, separate from your projects, so projects with imported meshes open faster. Delete all local data removes these copies.</p>
       </Section>
 
       <Section id="errors" title="The error log">

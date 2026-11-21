@@ -19,6 +19,12 @@ export async function deleteAllLocalData(): Promise<void> {
     // fall through to the sweep below
   }
   try {
+    // The mesh cache is its own database; name it explicitly in case indexedDB.databases() is unavailable.
+    await deleteDatabase('3dparter-meshcache')
+  } catch {
+    // nothing to remove
+  }
+  try {
     const dbs = (await indexedDB.databases?.()) ?? []
     await Promise.all(dbs.map((d) => (d.name ? deleteDatabase(d.name) : Promise.resolve())))
   } catch {

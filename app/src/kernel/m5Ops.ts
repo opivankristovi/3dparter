@@ -6,6 +6,7 @@ import { localToWorld } from '../sketch/geometry'
 import { Scope, assignNames, buildRegionFace, loopEdges, safeDelete, type BuiltBody } from './build'
 import { combine, discard, isValid } from './modify'
 import { MESH_GAPS_MESSAGE, base64ToBytes, parseStl } from './meshFile'
+import { applyCachedNames, captureNames, meshCacheKey, meshCacheStats, restoreCachedShape, storeConvertedShape } from './meshCache'
 import type { Region } from './regions'
 import type { SketchRecord } from './regenerate'
 
@@ -297,9 +298,11 @@ const MESH_GAPS = MESH_GAPS_MESSAGE
 /**
  * Turns a normalised binary STL (base64) into solids: each triangle becomes a face, the faces are sewn into closed
  * shells, shells become solids, and coplanar triangles are merged back into real flat faces so fillets and sketches
- * on faces work. Several separate shells become one body holding a compound of solids.
+ * on faces work. Several separate shells become one body holding a compound of solids. Returns the unified shape,
+ * before any naming (this is what the mesh cache stores).
  */
-export function importMeshBody(featureId: string, base64Stl: string): BuiltBody {
+export function convertMeshToShape(base64Stl: string): AnyShape {
+  meshCacheStats.conversions++
   const bytes = base64ToBytes(base64Stl)
   const mesh = parseStl(bytes)
   const oc = getOC()
@@ -356,10 +359,9 @@ export function importMeshBody(featureId: string, base64Stl: string): BuiltBody 
     shape = cast(unify.Shape() as never)
     if (joined !== solids[0]) safeDelete(joined) // the temporary compound of several shells
     if (shape.solids.length === 0) throw new Error(MESH_GAPS)
-    const { faceNames, edgeNames } = assignNames(shape, new Map(), featureId)
-    const built: BuiltBody = { shape, faceNames, edgeNames }
+    const unified: AnyShape = shape
     shape = null
-    return built
+    return unified
   } finally {
     try {
       oc.FS.unlink(`/${fileName}`)
@@ -369,5 +371,26 @@ export function importMeshBody(featureId: string, base64Stl: string): BuiltBody 
     for (const s of solids) safeDelete(s)
     safeDelete(shape)
     scope.free()
+  }
+}
+
+/** The mesh as a named solid body, from the mesh cache when this content was converted before. */
+export function importMeshBody(featureId: string, base64Stl: string): BuiltBody {
+  const key = meshCacheKey(base64Stl)
+  const hit = restoreCachedShape(key)
+  let shape: AnyShape | null = hit ? hit.shape : convertMeshToShape(base64Stl)
+  try {
+    // Naming a big mesh takes seconds, so the names are cached with the shape (as a list in the shape's own order).
+    let names = hit?.names ? applyCachedNames(shape, hit.names, featureId) : null
+    if (!names) {
+      names = assignNames(shape, new Map(), featureId)
+      if (!hit) storeConvertedShape(key, shape, captureNames(shape, names, featureId))
+    }
+    const { faceNames, edgeNames } = names
+    const built: BuiltBody = { shape, faceNames, edgeNames }
+    shape = null
+    return built
+  } finally {
+    safeDelete(shape)
   }
 }

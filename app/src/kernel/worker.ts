@@ -6,6 +6,7 @@ import { exportBodies } from './export'
 import { meshBody, sketchRegionData } from './mesh'
 import { KERNEL_VERSION } from './occ'
 import { loadOCBrowser } from './occ.browser'
+import { prefetchMeshCache } from './meshCache'
 import { Regenerator } from './regenerate'
 import { ensureFont } from '../sketch/text/font'
 
@@ -34,6 +35,7 @@ const api: KernelApi = {
 
   async regenerate(doc: ProjectDocument, generation: number) {
     await init()
+    await prefetchMeshCache(doc)
     return kernel.regenerate(doc, generation)
   },
 

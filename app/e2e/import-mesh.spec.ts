@@ -73,6 +73,56 @@ test.describe('Mesh import', () => {
     expect(reloaded[0].volume).toBeLessThan(before[0].volume - 10)
   })
 
+  test('keeps a converted copy of the mesh and the solid comes back from it after a reload', async ({ page }) => {
+    await newProject(page)
+    const dialog = await openImport(page)
+    await dialog.getByLabel('CAD file').setInputFiles({ name: 'cube.stl', mimeType: 'model/stl', buffer: boxStl(20, 20, 10) })
+    await dialog.getByRole('button', { name: 'Import', exact: true }).click()
+    await expect(dialog).toBeHidden()
+    await expect.poll(() => bodyMeshes(page)).toBe(1)
+    await settle(page)
+    const before = await bodyStats(page)
+    near(before[0].volume, 4000, 60)
+
+    // The worker writes the converted shape to its own database in the background.
+    const cached = () =>
+      page.evaluate(
+        () =>
+          new Promise<number>((resolve) => {
+            const open = indexedDB.open('3dparter-meshcache')
+            open.onerror = () => resolve(-1)
+            open.onsuccess = () => {
+              const db = open.result
+              if (!db.objectStoreNames.length) {
+                db.close()
+                resolve(0)
+                return
+              }
+              const req = db.transaction(db.objectStoreNames[0], 'readonly').objectStore(db.objectStoreNames[0]).count()
+              req.onsuccess = () => {
+                db.close()
+                resolve(req.result)
+              }
+              req.onerror = () => {
+                db.close()
+                resolve(-1)
+              }
+            }
+          }),
+      )
+    await expect.poll(cached).toBe(1)
+
+    await page.waitForTimeout(600)
+    await page.reload()
+    await waitReady(page)
+    await expect.poll(() => bodyMeshes(page)).toBe(1)
+    await settle(page)
+    const reloaded = await bodyStats(page)
+    near(reloaded[0].volume, before[0].volume, 1)
+    for (let i = 0; i < 3; i++) near(reloaded[0].max[i], before[0].max[i], 0.01)
+    expect(await cached()).toBe(1)
+  })
+
   test('shows a plain message for a mesh with gaps and for the wrong file type', async ({ page }) => {
     await newProject(page)
     const dialog = await openImport(page)
