@@ -8,7 +8,7 @@
 //   scopeOf(doc)                       the Map a field's text is evaluated with (see fieldText.ts)
 import { CONSTANTS, FUNCTIONS, UNITS, evalExpr, namesIn } from './expr'
 import type { EvalResult, Scope } from './expr'
-import type { Feature, ProjectDocument, Variable } from './types'
+import type { Feature, ProjectDocument, SketchFeature, TextEntity, Variable } from './types'
 
 export type { Scope }
 
@@ -196,6 +196,13 @@ export function exprFields(f: Feature): ExprField[] {
   }
 }
 
+// ---- text size and turn -------------------------------------------------------------------------
+
+/** The text entities of a sketch whose size or turn is a formula or variable. */
+export function formulaTexts(f: SketchFeature): TextEntity[] {
+  return f.sketch.entities.filter((e): e is TextEntity => e.type === 'text' && (e.sizeExpr !== undefined || e.rotationExpr !== undefined))
+}
+
 // ---- where a name is used ----------------------------------------------------------------------
 
 export interface VariableUse {
@@ -220,6 +227,12 @@ export function usesOf(doc: ProjectDocument, name: string): VariableUse[] {
     for (const c of f.sketch.constraints) {
       if (c.value !== undefined && namesIn(c.value).includes(name)) {
         uses.push({ kind: 'sketch', id: f.id, label: `${f.name} (${c.type} dimension)` })
+      }
+    }
+    for (const t of formulaTexts(f)) {
+      if (t.sizeExpr !== undefined && namesIn(t.sizeExpr).includes(name)) uses.push({ kind: 'sketch', id: f.id, label: `${f.name} (text size)` })
+      if (t.rotationExpr !== undefined && namesIn(t.rotationExpr).includes(name)) {
+        uses.push({ kind: 'sketch', id: f.id, label: `${f.name} (text rotation)` })
       }
     }
   }

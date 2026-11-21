@@ -1,10 +1,11 @@
 // OpenCascade operations for M5 features: loft, sweep, split by plane, mirror across plane,
 // and STEP solid import (S10 / F08).
-import { assembleWire, cast, getOC, isShape3D, makeCircle, makeLine, makeThreePointArc, type AnyShape, type Edge } from 'replicad'
+import { assembleWire, cast, getOC, isShape3D, makeCompound, makeCircle, makeLine, makeThreePointArc, type AnyShape, type Edge, measureVolume } from 'replicad'
 import type { PlaneFrame, SketchEntity, Vec2, Vec3 } from '../doc/types'
 import { localToWorld } from '../sketch/geometry'
 import { Scope, assignNames, buildRegionFace, loopEdges, safeDelete, type BuiltBody } from './build'
 import { combine, discard, isValid } from './modify'
+import { MESH_GAPS_MESSAGE, base64ToBytes, parseStl } from './meshFile'
 import type { Region } from './regions'
 import type { SketchRecord } from './regenerate'
 
@@ -286,6 +287,86 @@ export function importStepBody(featureId: string, content: string): BuiltBody {
     } catch {
       /* ignore missing temp file */
     }
+    safeDelete(shape)
+    scope.free()
+  }
+}
+
+const MESH_GAPS = MESH_GAPS_MESSAGE
+
+/**
+ * Turns a normalised binary STL (base64) into solids: each triangle becomes a face, the faces are sewn into closed
+ * shells, shells become solids, and coplanar triangles are merged back into real flat faces so fillets and sketches
+ * on faces work. Several separate shells become one body holding a compound of solids.
+ */
+export function importMeshBody(featureId: string, base64Stl: string): BuiltBody {
+  const bytes = base64ToBytes(base64Stl)
+  const mesh = parseStl(bytes)
+  const oc = getOC()
+  const scope = new Scope()
+  const fileName = `imp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}.stl`
+  const solids: AnyShape[] = []
+  let shape: AnyShape | null = null
+  try {
+    const min = [Infinity, Infinity, Infinity]
+    const max = [-Infinity, -Infinity, -Infinity]
+    for (let i = 0; i < mesh.positions.length; i++) {
+      const a = i % 3
+      min[a] = Math.min(min[a], mesh.positions[i])
+      max[a] = Math.max(max[a], mesh.positions[i])
+    }
+    const diagonal = Math.hypot(max[0] - min[0], max[1] - min[1], max[2] - min[2])
+    const tolerance = Math.max(1e-6, 1e-4 * diagonal)
+
+    oc.FS.writeFile(`/${fileName}`, bytes)
+    const triangleShape = scope.track(new oc.TopoDS_Shape())
+    const reader = scope.track(new oc.StlAPI_Reader())
+    if (!reader.Read(triangleShape, fileName)) throw new Error('Could not read this mesh file.')
+
+    const sewing = scope.track(new oc.BRepBuilderAPI_Sewing(tolerance, true, true, false, false))
+    sewing.Add(triangleShape)
+    sewing.Perform()
+    if (sewing.NbFreeEdges() > 0) throw new Error(MESH_GAPS)
+    if (sewing.NbMultipleEdges() > 0) {
+      throw new Error(
+        'Some edges of this mesh are shared by more than two triangles, so it cannot become a solid. Repair it and import it again.',
+      )
+    }
+    const sewn = scope.track(sewing.SewedShape())
+    const explorer = scope.track(new oc.TopExp_Explorer(sewn, oc.TopAbs_ShapeEnum.TopAbs_SHELL, oc.TopAbs_ShapeEnum.TopAbs_SHAPE))
+    while (explorer.More()) {
+      const shell = oc.TopoDS.Shell(explorer.Current())
+      const fixer = scope.track(new oc.ShapeFix_Solid())
+      const fixed = cast(fixer.SolidFromShell(oc.TopoDS.Shell(shell)) as never)
+      let solid: AnyShape = fixed
+      // ShapeFix_Solid normally orients the shell outwards; this is a safety net for the odd case it does not.
+      if (measureVolume(solid as never) < 0) {
+        const reversed = cast(solid.wrapped.Reversed() as never)
+        safeDelete(solid)
+        solid = reversed
+      }
+      solids.push(solid)
+      explorer.Next()
+    }
+    if (solids.length === 0) throw new Error('This mesh does not contain a closed surface, so it cannot become a solid.')
+
+    const joined: AnyShape = solids.length === 1 ? solids[0] : makeCompound(solids)
+    const unify = scope.track(new oc.ShapeUpgrade_UnifySameDomain(joined.wrapped, true, true, false))
+    unify.Build()
+    shape = cast(unify.Shape() as never)
+    if (joined !== solids[0]) safeDelete(joined) // the temporary compound of several shells
+    if (shape.solids.length === 0) throw new Error(MESH_GAPS)
+    const { faceNames, edgeNames } = assignNames(shape, new Map(), featureId)
+    const built: BuiltBody = { shape, faceNames, edgeNames }
+    shape = null
+    return built
+  } finally {
+    try {
+      oc.FS.unlink(`/${fileName}`)
+    } catch {
+      /* ignore missing temp file */
+    }
+    for (const s of solids) safeDelete(s)
     safeDelete(shape)
     scope.free()
   }

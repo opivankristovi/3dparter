@@ -2,6 +2,7 @@
 // kernel worker and the tests. opentype.js parses the .woff.
 import * as opentype from 'opentype.js'
 import interBoldUrl from '@fontsource/inter/files/inter-latin-700-normal.woff?url'
+import { KERNING_PAIRS, KERNING_UNITS_PER_EM } from './kerningData'
 
 export interface FontCommand {
   type: 'M' | 'L' | 'Q' | 'C' | 'Z'
@@ -14,6 +15,7 @@ export interface FontCommand {
 }
 export interface FontGlyph {
   advanceWidth?: number
+  unicode?: number
   getPath(x: number, y: number, fontSize: number): { commands: FontCommand[] }
 }
 /** The slice of an opentype.js Font that the sketch text code uses. */
@@ -22,6 +24,8 @@ export interface Font {
   tables: { os2?: { sCapHeight?: number } }
   ascender: number
   charToGlyph(c: string): FontGlyph
+  /** Kerning between two glyphs in font units (negative pulls them together). */
+  getKerningValue?(left: FontGlyph, right: FontGlyph): number
 }
 
 interface OpentypeApi {
@@ -32,11 +36,28 @@ let font: Font | null = null
 let loading: Promise<Font> | null = null
 const listeners = new Set<() => void>()
 
+let kernMap: Map<string, number> | null = null
+function kernPairs(): Map<string, number> {
+  if (!kernMap) {
+    kernMap = new Map()
+    for (let i = 0; i + 1 < KERNING_PAIRS.length; i += 2) kernMap.set(KERNING_PAIRS[i] as string, KERNING_PAIRS[i + 1] as number)
+  }
+  return kernMap
+}
+
 function parseFont(buffer: ArrayBuffer): Font {
   const ns = opentype as unknown as Partial<OpentypeApi> & { default?: OpentypeApi }
   const parse = ns.parse ?? ns.default?.parse
   if (!parse) throw new Error('The text font parser is unavailable.')
-  return parse(buffer)
+  const f = parse(buffer)
+  // opentype.js cannot read this font's GPOS extension lookups, so its kerning is always 0. The pairs come
+  // from scripts/gen-kerning.mjs instead (in font units of the bundled font; scaled to this font's em).
+  f.getKerningValue = (left, right) => {
+    if (!left.unicode || !right.unicode) return 0
+    const v = kernPairs().get(String.fromCodePoint(left.unicode) + String.fromCodePoint(right.unicode)) ?? 0
+    return (v * f.unitsPerEm) / KERNING_UNITS_PER_EM
+  }
+  return f
 }
 
 function set(f: Font): void {

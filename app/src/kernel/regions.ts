@@ -5,6 +5,7 @@
 // graph is a loop; circles (and full-turn arcs) are loops by themselves. A loop inside another
 // loop is a hole of it (even depth = outer, odd depth = hole of its direct parent).
 import type { ArcEntity, CircleEntity, LineEntity, Sketch, SketchEntity, Vec2 } from '../doc/types'
+import type { TextSegmentEntity } from '../sketch/text/outline'
 
 export const NODE_TOL = 1e-6
 const TWO_PI = Math.PI * 2
@@ -26,7 +27,7 @@ export interface Loop {
 }
 
 export interface Region {
-  /** '<sketchId>/region:<sorted entity ids of the outer loop joined by ",">', or '<sketchId>/region:<textId>~<c>' for a glyph */
+  /** '<sketchId>/region:<sorted entity ids of the outer loop joined by ",">', or '<sketchId>/region:<textId>~<c>' for a glyph (the whole text: '<textId>~*', see regenerate.ts) */
   name: string
   outer: Loop
   holes: Loop[]
@@ -183,12 +184,71 @@ function fullArcLoop(a: ArcEntity): Loop {
   return { segments: [{ id: a.id, reversed: false }], points: pts, area: Math.PI * a.radius * a.radius }
 }
 
+const TEXT_SEGMENT = /^(.+~\d+)\.\d+$/
+
+/** Points along a Bezier curve (de Casteljau), start included, end excluded. */
+function sampleBezier(pts: Vec2[], n: number): Vec2[] {
+  const out: Vec2[] = []
+  for (let i = 0; i < n; i++) {
+    const t = i / n
+    let cur = pts
+    while (cur.length > 1) {
+      const next: Vec2[] = []
+      for (let j = 0; j + 1 < cur.length; j++) {
+        next.push([cur[j][0] + (cur[j + 1][0] - cur[j][0]) * t, cur[j][1] + (cur[j + 1][1] - cur[j][1]) * t])
+      }
+      cur = next
+    }
+    out.push(cur[0])
+  }
+  return out
+}
+
+function shoelace(points: Vec2[]): number {
+  let a2 = 0
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i]
+    const q = points[(i + 1) % points.length]
+    a2 += p[0] * q[1] - q[0] * p[1]
+  }
+  return a2 / 2
+}
+
+/**
+ * A glyph contour is already a closed, counter-clockwise loop in walking order (see sketch/text/outline.ts),
+ * so text segments become loops directly and never enter the line graph. Containment uses the polyline.
+ */
+function textLoops(segments: TextSegmentEntity[]): Loop[] {
+  const groups = new Map<string, TextSegmentEntity[]>()
+  for (const s of segments) {
+    const key = TEXT_SEGMENT.exec(s.id)?.[1] ?? s.id
+    const list = groups.get(key)
+    if (list) list.push(s)
+    else groups.set(key, [s])
+  }
+  const loops: Loop[] = []
+  for (const list of groups.values()) {
+    const points = list.flatMap((s) => s.curve?.poly ?? [s.a])
+    // The area follows the true curves (a fine sampling), not the coarser display polyline.
+    const area = shoelace(list.flatMap((s) => (s.curve && s.curve.kind !== 'line' ? sampleBezier(s.curve.pts, 64) : [s.a])))
+    if (points.length >= 3 && area > 1e-9) {
+      loops.push({ segments: list.map((s) => ({ id: s.id, reversed: false })), points, area })
+    }
+  }
+  return loops
+}
+
 /** Closed loops of the sketch's real (non-construction) geometry, counter-clockwise. */
 export function findLoops(sketch: Sketch): Loop[] {
   const entities = new Map<string, SketchEntity>()
-  for (const e of sketch.entities) if (!e.construction && e.type !== 'text') entities.set(e.id, e)  // text is expanded to lines first
+  const textSegments: TextSegmentEntity[] = []
+  for (const e of sketch.entities) {
+    if (e.construction || e.type === 'text') continue // text is expanded to segments first
+    if (e.type === 'line' && e.id.includes('~')) textSegments.push(e)
+    else entities.set(e.id, e)
+  }
 
-  const loops: Loop[] = []
+  const loops: Loop[] = textLoops(textSegments)
   const nodes: Vec2[] = []
   const nodeOf = (p: Vec2): number => {
     for (let i = 0; i < nodes.length; i++) {

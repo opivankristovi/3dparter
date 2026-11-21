@@ -16,10 +16,10 @@ import { isDimensional, mustBePositive } from '../sketch/solver/constraints'
 import { isSolverReady, solveSketch } from '../sketch/solver/solver'
 import { evalValue } from '../sketch/solver/value'
 import { newId, syncBodyEntry } from './commands'
-import { namesIn, renameIn } from './expr'
+import { evalExpr, namesIn, renameIn } from './expr'
 import { useProjectStore } from './store'
 import type { ProjectDocument, SketchEntity, SketchFeature, Variable } from './types'
-import { evaluateVariables, exprFields, usesOf, validateVariableName } from './variables'
+import { evaluateVariables, exprFields, formulaTexts, usesOf, validateVariableName } from './variables'
 import type { Checked, VariableUse } from './variables'
 
 export type VariableResult = { ok: true } | { ok: false; message: string; uses?: VariableUse[] }
@@ -87,18 +87,62 @@ function planSketches(doc: ProjectDocument, names: ReadonlySet<string>, scope: R
   return { ok: true, solved }
 }
 
-/** Checks `next`, re-solves the affected sketches and applies both as one undo step. */
+/** New sizes (mm) and turns (radians) for text whose formulas use an affected name, by sketch id then text id. */
+type TextPatches = Map<string, Map<string, { size?: number; rotation?: number }>>
+
+/** Re-evaluates the size and turn formulas of text. A size of zero or less, or a broken formula, refuses the change. */
+function planText(doc: ProjectDocument, names: ReadonlySet<string>, scope: ReadonlyMap<string, number>): { ok: true; patches: TextPatches } | { ok: false; message: string } {
+  const patches: TextPatches = new Map()
+  for (const f of doc.features) {
+    if (f.type !== 'sketch') continue
+    for (const t of formulaTexts(f)) {
+      const patch: { size?: number; rotation?: number } = {}
+      if (t.sizeExpr !== undefined && namesIn(t.sizeExpr).some((n) => names.has(n))) {
+        const r = evalExpr(t.sizeExpr, scope, 'length')
+        if (!r.ok || !Number.isFinite(r.value) || r.value <= 0) return { ok: false, message: `The text in ${f.name} can no longer have this size.` }
+        patch.size = r.value
+      }
+      if (t.rotationExpr !== undefined && namesIn(t.rotationExpr).some((n) => names.has(n))) {
+        const r = evalExpr(t.rotationExpr, scope, 'angle')
+        if (!r.ok || !Number.isFinite(r.value)) return { ok: false, message: `The text in ${f.name} can no longer have this rotation.` }
+        patch.rotation = (r.value * Math.PI) / 180
+      }
+      if (patch.size !== undefined || patch.rotation !== undefined) {
+        const bySketch = patches.get(f.id) ?? new Map()
+        bySketch.set(t.id, patch)
+        patches.set(f.id, bySketch)
+      }
+    }
+  }
+  return { ok: true, patches }
+}
+
+/** Checks `next`, re-solves the affected sketches and text and applies all of it as one undo step. */
 function commit(label: string, next: Variable[], focusId: string, touched: ReadonlySet<string>): VariableResult {
   const doc = state().doc
   const bad = newErrorOf(doc.variables, next, focusId)
   if (bad !== null) return refuse(bad)
-  const plan = planSketches(doc, affectedNames(next, touched), evaluateVariables(next).values)
+  const affected = affectedNames(next, touched)
+  const values = evaluateVariables(next).values
+  const plan = planSketches(doc, affected, values)
   if (!plan.ok) return refuse(plan.message)
+  const text = planText(doc, affected, values)
+  if (!text.ok) return refuse(text.message)
   state().apply(label, (draft) => {
     draft.variables = next
     for (const f of draft.features) {
       const entities = f.type === 'sketch' ? plan.solved.get(f.id) : undefined
       if (f.type === 'sketch' && entities) f.sketch.entities = entities
+      const patches = f.type === 'sketch' ? text.patches.get(f.id) : undefined
+      if (f.type === 'sketch' && patches) {
+        for (const e of f.sketch.entities) {
+          const p = e.type === 'text' ? patches.get(e.id) : undefined
+          if (e.type === 'text' && p) {
+            if (p.size !== undefined) e.size = p.size
+            if (p.rotation !== undefined) e.rotation = p.rotation
+          }
+        }
+      }
       if (f.type === 'pattern') syncBodyEntry(draft, f)
     }
   })
@@ -154,6 +198,11 @@ export function renameVariable(id: string, newName: string): VariableResult {
           const text = renameIn(c.value, from, to)
           if (text !== c.value) c.value = text
         }
+      }
+      for (const e of f.sketch.entities) {
+        if (e.type !== 'text') continue
+        if (e.sizeExpr !== undefined) e.sizeExpr = renameIn(e.sizeExpr, from, to)
+        if (e.rotationExpr !== undefined) e.rotationExpr = renameIn(e.rotationExpr, from, to)
       }
     }
   })

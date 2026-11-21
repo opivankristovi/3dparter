@@ -12,6 +12,7 @@ import type { KernelState } from '../screens/workspace/useKernel'
 import { Button } from '../ui/Button'
 import { RevolveIcon } from '../ui/ModelIcons'
 import { NumericInput } from '../ui/NumericInput'
+import { wholeTextName } from '../sketch/text/regionRef'
 import { ParameterCard, ParameterRow } from '../ui/ParameterCard'
 import { RemovableChip } from '../ui/RemovableChip'
 import { SegmentedControl } from '../ui/SegmentedControl'
@@ -82,7 +83,7 @@ export function useRevolveTool(kernel: KernelState): RevolveToolResult {
       const last = [...features].reverse().find((f) => f.type === 'sketch' && !f.suppressed)
       const regs = last ? kernel.regions[last.id] : undefined
       if (regs && regs.length === 1) {
-        const ref: Ref = { kind: 'sketchRegion', name: regs[0].name }
+        const ref: Ref = { kind: 'sketchRegion', name: wholeTextName(regs[0].name) ?? regs[0].name }
         useProjectStore.getState().setSelection([ref])
         profiles = [ref]
       }

@@ -31,7 +31,9 @@ export type RefKind =
  *   face          '<extrudeId>/side/<sketchEntityId>'  |  '<extrudeId>/cap:start'  |  '<extrudeId>/cap:end'
  *   edge          '<faceName>|<faceName>' (the two adjacent face names, sorted), plus '#<n>' if several share a pair
  *   sketchRegion  '<sketchId>/region:<sorted entity ids of the outer loop, joined by ",">'
- *                 a glyph outline of a text entity: '<sketchId>/region:<textId>~<contour>' (short form)
+ *                 a glyph outline of a text entity: '<sketchId>/region:<textId>~<contour>' (short form),
+ *                 or '<sketchId>/region:<textId>~*' for EVERY glyph of that text, whatever letters it has
+ *                 when the model regenerates (what a plain click on text picks; Alt+click picks one glyph)
  *   sketchEdge    '<sketchId>/<entityId>'
  * Added in M2:
  *   originAxis         'X' | 'Y' | 'Z'
@@ -80,14 +82,20 @@ export interface ArcEntity extends EntityBase {
 }
 /**
  * Text. Never sent to the solver and never referenced by constraints. The kernel and the region finder
- * see it as closed line loops (see sketch/text/outline.ts `expandText`), ids '<textId>~<c>.<k>'.
+ * see it as closed contours (see sketch/text/outline.ts `expandText`). Each glyph path command (line,
+ * quadratic or cubic curve) is one segment '<textId>~<c>.<k>' (c = contour, k = command index in it); the
+ * extrude names its side face '<extrudeId>/side/<textId>~<c>.<k>', one smooth face per curve.
  */
 export interface TextEntity extends EntityBase {
   type: 'text'
   position: Vec2 // baseline start (straight text) in sketch mm
   text: string
   size: number // cap height in mm
+  /** Set when the size was typed as a formula or variable ("w / 2"); re-evaluated when variables change. */
+  sizeExpr?: Expr
   rotation: number // radians, straight text only
+  /** Same for the turn, in degrees ("angle + 90"). */
+  rotationExpr?: Expr
   /** Lay the text along a circle, arc or line of the same sketch. */
   path?: { entityId: string; offset: number /* 0..1 along the path where the text starts */; side: 'outside' | 'inside' }
 }
@@ -290,10 +298,13 @@ export interface PatternFeature extends FeatureBase {
   params: { kind: 'linear' | 'circular'; bodies: Ref[]; axis: Ref; count: Expr; spacing: Expr }
 }
 
-/** Root body imported from an external STEP file (S10 / F08). */
+/**
+ * Root body imported from an external file (S10 / F08). STEP keeps the file text in `content`; STL and 3MF meshes
+ * are normalised to a binary STL (millimetres) and stored as one base64 string.
+ */
 export interface ImportFeature extends FeatureBase {
   type: 'import'
-  params: { filename: string; format: 'step'; content: string }
+  params: { filename: string; format: 'step' | 'stl' | '3mf'; content: string; meshInfo?: { triangles: number; unit: 'mm' } }
 }
 
 export type Feature =

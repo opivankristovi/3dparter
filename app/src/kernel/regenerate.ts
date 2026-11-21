@@ -42,13 +42,14 @@ import type { FeatureStatus, MeasureResult, RegenResult } from './api'
 import { buildExtrusion, safeDelete, Scope, type BuiltBody } from './build'
 import type { Edge, Face } from 'replicad'
 import { dirToLocal, dotVec, faceFrame, localToWorld, subVec, tiltAndOffset, worldToLocal } from './frames'
-import { buildLoft, buildSweep, edgeFromSketchEntity, importStepBody, mirrorBody, splitBody } from './m5Ops'
+import { buildLoft, buildSweep, edgeFromSketchEntity, importMeshBody, importStepBody, mirrorBody, splitBody } from './m5Ops'
 import { measureRefs } from './measure'
 import { chamferBody, combine, discard, filletBody, scaleBody, shellBody, transformBody, type BoolOp } from './modify'
 import { HINT_WARNING, pickSubShapes, resolveBodyRef, resolveSubRef, type Resolved } from './naming'
 import { findRegions, type Region } from './regions'
 import { getLoadedFont } from '../sketch/text/font'
 import { expandText, hasText } from '../sketch/text/outline'
+import { firstRegionOf, glyphRegionsOf, isWholeTextRef } from '../sketch/text/regionRef'
 import { buildRevolution, profilesCrossAxis, type LocalAxis } from './revolve'
 
 export interface SketchRecord {
@@ -506,6 +507,13 @@ export class Regenerator {
       if (!sk) return { error: gone }
       if (sketch && sketch !== sk) return { error: 'Pick shapes from one sketch at a time.' }
       sketch = sk
+      if (isWholeTextRef(ref.name)) {
+        // Every glyph of the text as it is now: letters added or removed later change what this builds.
+        const glyphs = glyphRegionsOf(sk.regions, ref.name)
+        if (glyphs.length === 0) return { error: gone }
+        for (const g of glyphs) if (!regions.includes(g)) regions.push(g)
+        continue
+      }
       const region = sk.regions.find((r) => r.name === ref.name)
       if (!region) return { error: gone }
       regions.push(region)
@@ -867,6 +875,7 @@ export class Regenerator {
 
     const picked = this.pickRegions([p.profile], ctx, 'The shape this sweep used is gone. Pick a new profile.')
     if ('error' in picked) return fail(picked.error)
+    if (picked.regions.length > 1) return fail('A sweep takes one shape. Alt+click one letter of the text.')
     const targets = this.pickTargets(p.mode, p.targets, ctx)
     if ('error' in targets) return fail(targets.error)
 
@@ -905,7 +914,7 @@ export class Regenerator {
     for (const ref of p.profiles) {
       const skId = ref.name.split('/region:')[0]
       const sk = ctx.done.get(skId)?.sketch
-      const reg = sk?.regions.find((r) => r.name === ref.name)
+      const reg = sk ? firstRegionOf(sk.regions, ref.name) : undefined
       if (!sk || !reg) return fail('A profile this loft used is gone. Pick the profiles again.')
       sections.push({ region: reg, sketch: sk })
     }
@@ -1054,7 +1063,7 @@ export class Regenerator {
   }
 
   private evalImport(f: ImportFeature, key: string): FeatureRecord {
-    const built = importStepBody(f.id, f.params.content)
+    const built = f.params.format === 'step' ? importStepBody(f.id, f.params.content) : importMeshBody(f.id, f.params.content)
     return { key, status: { featureId: f.id, ok: true }, set: [{ name: f.id, key, built }], removed: [] }
   }
 }

@@ -1,12 +1,42 @@
-// Pure geometry of sketch text (no OpenCascade, no DOM): glyph outlines as closed polylines, and the
-// expansion of text entities into plain line entities so regions, extrusion and cuts need no special case.
+// Pure geometry of sketch text (no OpenCascade, no DOM): glyph outlines, and the expansion of text
+// entities into plain line entities so regions, extrusion and cuts need no special case.
+//
+// Every glyph contour keeps its REAL path commands: each line, quadratic or cubic command is one segment
+// '<textId>~<c>.<k>' (k = the command's index in the contour). Polylines are made from them for display,
+// picking and containment only; the kernel builds true curve edges from the commands (see kernel/build.ts).
 import type { ArcEntity, CircleEntity, LineEntity, Sketch, SketchEntity, TextEntity, Vec2 } from '../../doc/types'
-import { capHeight, type Font, type FontCommand } from './font'
+import { capHeight, type Font, type FontCommand, type FontGlyph } from './font'
 
 const TWO_PI = Math.PI * 2
 const MIN_STEP = 1e-5 // mm; closer points are merged
 
-// ---- glyph flattening --------------------------------------------------------------------------
+export type TextCurveKind = 'line' | 'quad' | 'cubic'
+
+/** The exact shape of one text segment: control points in sketch mm, in walking order, plus its flattening. */
+export interface TextCurve {
+  kind: TextCurveKind
+  /** line: [start, end]; quad: [start, control, end]; cubic: [start, control 1, control 2, end]. */
+  pts: Vec2[]
+  /** Points from the start up to (not including) the end: the segment as a polyline. */
+  poly: Vec2[]
+}
+
+/** A text segment as a line entity (its chord) that also carries its exact curve. */
+export type TextSegmentEntity = LineEntity & { curve?: TextCurve }
+
+export interface TextContourSeg extends TextCurve {
+  /** Index of the font command inside the contour. */
+  k: number
+}
+
+/** One closed glyph contour, counter-clockwise, as segments in walking order. */
+export interface TextContour {
+  segs: TextContourSeg[]
+  /** The whole contour as a closed polyline (no repeated last point). */
+  points: Vec2[]
+}
+
+// ---- glyph paths -------------------------------------------------------------------------------
 
 function area2(poly: Vec2[]): number {
   let a = 0
@@ -18,77 +48,104 @@ function area2(poly: Vec2[]): number {
   return a
 }
 
-function cleanContour(raw: Vec2[]): Vec2[] | null {
-  const pts: Vec2[] = []
-  for (const p of raw) {
-    const last = pts[pts.length - 1]
-    if (last && Math.hypot(p[0] - last[0], p[1] - last[1]) < MIN_STEP) continue
-    pts.push(p)
-  }
-  while (pts.length > 1 && Math.hypot(pts[0][0] - pts[pts.length - 1][0], pts[0][1] - pts[pts.length - 1][1]) < MIN_STEP) pts.pop()
-  if (pts.length < 3) return null
-  if (Math.abs(area2(pts)) < 1e-9) return null
-  return pts
+const dist = (a: Vec2, b: Vec2) => Math.hypot(a[0] - b[0], a[1] - b[1])
+
+interface RawSeg {
+  k: number
+  kind: TextCurveKind
+  pts: Vec2[]
 }
 
-/** One glyph as closed contours in mm, baseline at y = 0, origin at the pen position, y up. */
-function glyphContours(font: Font, ch: string, scale: number, tol: number): { contours: Vec2[][]; advance: number } {
-  const glyph = font.charToGlyph(ch)
-  const advance = (glyph.advanceWidth ?? font.unitsPerEm * 0.5) * scale
+/** One glyph as contours of path commands in mm, baseline at y = 0, origin at the pen position, y up. */
+function glyphSegments(font: Font, glyph: FontGlyph, scale: number): RawSeg[][] {
   const cmds: FontCommand[] = glyph.getPath(0, 0, font.unitsPerEm).commands
-  const contours: Vec2[][] = []
-  let cur: Vec2[] = []
+  const contours: RawSeg[][] = []
+  let segs: RawSeg[] = []
+  let start: Vec2 | null = null
   let pen: Vec2 = [0, 0]
+  let k = 0
   const P = (x: number, y: number): Vec2 => [x * scale, -y * scale]
   const close = () => {
-    const c = cleanContour(cur)
-    if (c) contours.push(c)
-    cur = []
+    if (start && segs.length > 0) {
+      if (dist(pen, start) >= MIN_STEP) segs.push({ k: k++, kind: 'line', pts: [pen, start] })
+      else segs[segs.length - 1].pts[segs[segs.length - 1].pts.length - 1] = start
+      contours.push(segs)
+    }
+    segs = []
+    start = null
+  }
+  const add = (kind: TextCurveKind, ...rest: Vec2[]) => {
+    const pts = [pen, ...rest]
+    if (pts.every((p) => dist(p, pen) < MIN_STEP)) {
+      k++
+      return
+    }
+    segs.push({ k: k++, kind, pts })
+    pen = pts[pts.length - 1]
   }
   for (const c of cmds) {
     if (c.type === 'M') {
-      if (cur.length) close()
+      if (start) close()
       pen = P(c.x!, c.y!)
-      cur = [pen]
+      start = pen
+      k = 1
+    } else if (!start) {
+      continue
     } else if (c.type === 'L') {
-      pen = P(c.x!, c.y!)
-      cur.push(pen)
+      const p = P(c.x!, c.y!)
+      if (dist(pen, p) < MIN_STEP) k++
+      else add('line', p)
     } else if (c.type === 'Q') {
-      const p0 = pen
-      const p1 = P(c.x1!, c.y1!)
-      const p2 = P(c.x!, c.y!)
-      const dev = Math.hypot(p0[0] - 2 * p1[0] + p2[0], p0[1] - 2 * p1[1] + p2[1]) / 4
-      const n = Math.max(2, Math.ceil(Math.sqrt(dev / tol)))
-      for (let i = 1; i <= n; i++) {
-        const t = i / n
-        const u = 1 - t
-        cur.push([u * u * p0[0] + 2 * u * t * p1[0] + t * t * p2[0], u * u * p0[1] + 2 * u * t * p1[1] + t * t * p2[1]])
-      }
-      pen = p2
+      add('quad', P(c.x1!, c.y1!), P(c.x!, c.y!))
     } else if (c.type === 'C') {
-      const p0 = pen
-      const p1 = P(c.x1!, c.y1!)
-      const p2 = P(c.x2!, c.y2!)
-      const p3 = P(c.x!, c.y!)
-      const d1 = Math.hypot(p0[0] - 2 * p1[0] + p2[0], p0[1] - 2 * p1[1] + p2[1])
-      const d2 = Math.hypot(p1[0] - 2 * p2[0] + p3[0], p1[1] - 2 * p2[1] + p3[1])
-      const n = Math.max(2, Math.ceil(Math.sqrt((0.75 * Math.max(d1, d2)) / tol / 2)))
-      for (let i = 1; i <= n; i++) {
-        const t = i / n
-        const u = 1 - t
-        const a = u * u * u
-        const b = 3 * u * u * t
-        const cc = 3 * u * t * t
-        const d = t * t * t
-        cur.push([a * p0[0] + b * p1[0] + cc * p2[0] + d * p3[0], a * p0[1] + b * p1[1] + cc * p2[1] + d * p3[1]])
-      }
-      pen = p3
+      add('cubic', P(c.x1!, c.y1!), P(c.x2!, c.y2!), P(c.x!, c.y!))
     } else if (c.type === 'Z') {
       close()
     }
   }
-  if (cur.length) close()
-  return { contours, advance }
+  if (start) close()
+  return contours
+}
+
+/** A segment as a polyline from its start up to (not including) its end. */
+function flatten(kind: TextCurveKind, pts: Vec2[], tol: number): Vec2[] {
+  if (kind === 'line') return [pts[0]]
+  const out: Vec2[] = []
+  if (kind === 'quad') {
+    const [p0, p1, p2] = pts
+    const dev = Math.hypot(p0[0] - 2 * p1[0] + p2[0], p0[1] - 2 * p1[1] + p2[1]) / 4
+    const n = Math.max(2, Math.ceil(Math.sqrt(dev / tol)))
+    for (let i = 0; i < n; i++) {
+      const t = i / n
+      const u = 1 - t
+      out.push([u * u * p0[0] + 2 * u * t * p1[0] + t * t * p2[0], u * u * p0[1] + 2 * u * t * p1[1] + t * t * p2[1]])
+    }
+    return out
+  }
+  const [p0, p1, p2, p3] = pts
+  const d1 = Math.hypot(p0[0] - 2 * p1[0] + p2[0], p0[1] - 2 * p1[1] + p2[1])
+  const d2 = Math.hypot(p1[0] - 2 * p2[0] + p3[0], p1[1] - 2 * p2[1] + p3[1])
+  const n = Math.max(2, Math.ceil(Math.sqrt((0.75 * Math.max(d1, d2)) / tol / 2)))
+  for (let i = 0; i < n; i++) {
+    const t = i / n
+    const u = 1 - t
+    const a = u * u * u
+    const b = 3 * u * u * t
+    const c = 3 * u * t * t
+    const d = t * t * t
+    out.push([a * p0[0] + b * p1[0] + c * p2[0] + d * p3[0], a * p0[1] + b * p1[1] + c * p2[1] + d * p3[1]])
+  }
+  return out
+}
+
+/** Places a raw contour and makes it counter-clockwise; null when it is degenerate. */
+function placeContour(raw: RawSeg[], place: Placement, tol: number): TextContour | null {
+  let segs = raw.map((s) => ({ k: s.k, kind: s.kind, pts: s.pts.map(place) }))
+  const flat = segs.flatMap((s) => flatten(s.kind, s.pts, tol))
+  if (flat.length < 3 || Math.abs(area2(flat)) < 1e-9) return null
+  if (area2(flat) < 0) segs = segs.reverse().map((s) => ({ ...s, pts: [...s.pts].reverse() }))
+  const full = segs.map((s) => ({ ...s, poly: flatten(s.kind, s.pts, tol) }))
+  return { segs: full, points: full.flatMap((s) => s.poly) }
 }
 
 // ---- layout ------------------------------------------------------------------------------------
@@ -155,8 +212,18 @@ function pathPlacement(
   return null
 }
 
-/** Closed polylines (no repeated last point) for every glyph contour of a text entity, in sketch mm. */
-export function textContours(entity: TextEntity, sketch: Sketch, font: Font): Vec2[][] {
+/** Kerning between two glyphs in mm (0 when the font has none). */
+function kerning(font: Font, left: FontGlyph, right: FontGlyph, scale: number): number {
+  try {
+    const v = font.getKerningValue?.(left, right) ?? 0
+    return Number.isFinite(v) ? v * scale : 0
+  } catch {
+    return 0
+  }
+}
+
+/** Every glyph contour of a text entity, counter-clockwise, in sketch mm. */
+export function textShapes(entity: TextEntity, sketch: Sketch, font: Font): TextContour[] {
   if (!entity.text || !(entity.size > 0)) return []
   const scale = entity.size / capHeight(font)
   const tol = entity.size / 150
@@ -164,23 +231,49 @@ export function textContours(entity: TextEntity, sketch: Sketch, font: Font): Ve
   const along = entity.path && target ? pathPlacement(entity.path, target) : null
   const cos = Math.cos(entity.rotation)
   const sin = Math.sin(entity.rotation)
-  const out: Vec2[][] = []
+  const out: TextContour[] = []
   let pen = 0
-  for (const ch of entity.text) {
-    const { contours, advance } = glyphContours(font, ch, scale, tol)
-    if (contours.length) {
+  let prev: FontGlyph | null = null
+  for (const ch of Array.from(entity.text)) {
+    const glyph = font.charToGlyph(ch)
+    if (prev) pen += kerning(font, prev, glyph, scale)
+    const advance = (glyph.advanceWidth ?? font.unitsPerEm * 0.5) * scale
+    const raw = glyphSegments(font, glyph, scale)
+    if (raw.length) {
+      const here = pen
       const place: Placement = along
-        ? along(pen + advance / 2, advance)
+        ? along(here + advance / 2, advance)
         : (p) => [
-            entity.position[0] + (p[0] + pen) * cos - p[1] * sin,
-            entity.position[1] + (p[0] + pen) * sin + p[1] * cos,
+            entity.position[0] + (p[0] + here) * cos - p[1] * sin,
+            entity.position[1] + (p[0] + here) * sin + p[1] * cos,
           ]
-      for (const c of contours) {
-        const placed = cleanContour(c.map(place))
+      for (const c of raw) {
+        const placed = placeContour(c, place, tol)
         if (placed) out.push(placed)
       }
     }
     pen += advance
+    prev = glyph
+  }
+  return out
+}
+
+/** Closed polylines (no repeated last point) for every glyph contour of a text entity, in sketch mm. */
+export function textContours(entity: TextEntity, sketch: Sketch, font: Font): Vec2[][] {
+  return textShapes(entity, sketch, font).map((c) => c.points)
+}
+
+/** The id of one text segment: '<textId>~<c>.<k>'. */
+export const textSegmentId = (textId: string, c: number, k: number): string => `${textId}~${c}.${k}`
+
+/** The exact curve of every text segment of a sketch, by segment id, in sketch coordinates. */
+export function textCurves(sketch: Sketch, font: Font): Map<string, TextCurve> {
+  const out = new Map<string, TextCurve>()
+  for (const e of sketch.entities) {
+    if (e.type !== 'text') continue
+    textShapes(e, sketch, font).forEach((c, ci) => {
+      for (const s of c.segs) out.set(textSegmentId(e.id, ci, s.k), { kind: s.kind, pts: s.pts, poly: s.poly })
+    })
   }
   return out
 }
@@ -207,9 +300,10 @@ export function hasText(sketch: Sketch): boolean {
 }
 
 /**
- * The sketch with every text entity replaced by line segments '<textId>~<c>.<k>' (c = contour index across
- * the whole text, k = segment index). Constraints are untouched. With no font the text is just removed.
- * Returns the same object when there is no text.
+ * The sketch with every text entity replaced by one line entity per glyph path command, ids
+ * '<textId>~<c>.<k>' (c = contour index across the whole text, k = command index). Each carries its chord
+ * (a to b, in walking order, contours counter-clockwise) and its exact `curve`. Constraints are untouched.
+ * With no font the text is just removed. Returns the same object when there is no text.
  */
 export function expandText(sketch: Sketch, font: Font | null): Sketch {
   if (!hasText(sketch)) return sketch
@@ -220,17 +314,18 @@ export function expandText(sketch: Sketch, font: Font | null): Sketch {
       continue
     }
     if (!font) continue
-    textContours(e, sketch, font).forEach((poly, c) => {
-      poly.forEach((p, k) => {
-        const line: LineEntity = {
-          id: `${e.id}~${c}.${k}`,
+    textShapes(e, sketch, font).forEach((contour, c) => {
+      for (const s of contour.segs) {
+        const seg: TextSegmentEntity = {
+          id: textSegmentId(e.id, c, s.k),
           type: 'line',
           construction: false,
-          a: p,
-          b: poly[(k + 1) % poly.length],
+          a: s.pts[0],
+          b: s.pts[s.pts.length - 1],
+          curve: { kind: s.kind, pts: s.pts, poly: s.poly },
         }
-        entities.push(line)
-      })
+        entities.push(seg)
+      }
     })
   }
   return { entities, constraints: sketch.constraints }

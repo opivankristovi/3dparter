@@ -65,7 +65,8 @@ async function extrudeText(page: Page, opts: { mode?: 'Join' | 'Cut'; distance?:
   await page.getByRole('button', { name: 'Finish sketch' }).click()
   await toolButton(page, 'Extrude').click()
   await expect.poll(async () => (await regionNames(page)).filter((n) => n.includes('~')).length).toBeGreaterThan(0)
-  const names = (await regionNames(page)).filter((n) => n.includes('~'))
+  // The whole text, the way a plain click on a letter picks it: letters added later are included.
+  const names = [...new Set((await regionNames(page)).filter((n) => n.includes('~')).map((n) => n.replace(/~\d+$/, '~*')))]
   await page.evaluate((list) => {
     window.__3dshaper!.store.getState().setSelection(list.map((name) => ({ kind: 'sketchRegion' as const, name })))
   }, names)
@@ -306,8 +307,8 @@ test.describe('M6 text edge cases', () => {
     await expect(historyItem(page, 'Extrude 1')).not.toContainText('Error:')
     await expect.poll(async () => (await bodyStats(page)).length).toBe(1)
     expect((await textEntities(page))[0].text).toBe('ABC')
-    expect((await bodyStats(page))[0].volume).toBeGreaterThan(0)
-    expect(v1).toBeGreaterThan(0)
+    // The extrude took the whole text, so the new letter C is part of the solid.
+    expect((await bodyStats(page))[0].volume).toBeGreaterThan(v1 + 20)
   })
 
   test('M6-T-E7 deleting the curve the text follows leaves the text usable', async ({ page }) => {

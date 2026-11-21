@@ -14,6 +14,8 @@ import { applyDraft, cancelDraft, changeDraft, useLengthInput, useSignedLengthIn
 import { MODE_WORDS, cutDirection, meshVolume, sameSketchRegions, sameVolume, sketchOfRegion } from '../modeling/logic'
 import { AxisDragHandle } from '../modeling/ModelHandles'
 import { extrudeTargetPool } from '../modeling/picking'
+import { textLabelOfRef } from '../modeling/profileLabel'
+import { coveredRegions, wholeTextName } from '../sketch/text/regionRef'
 import { useToolStore } from '../screens/workspace/toolStore'
 import type { KernelState } from '../screens/workspace/useKernel'
 import { NumericInput } from '../ui/NumericInput'
@@ -125,7 +127,7 @@ export function useExtrudeTool(kernel: KernelState, engine: ViewportEngine | nul
     const last = [...features].reverse().find((f) => f.type === 'sketch' && !f.suppressed)
     const regs = last ? kernel.regions[last.id] : undefined
     if (regs && regs.length === 1) {
-      const ref: Ref = { kind: 'sketchRegion', name: regs[0].name }
+      const ref: Ref = { kind: 'sketchRegion', name: wholeTextName(regs[0].name) ?? regs[0].name }
       useProjectStore.getState().setSelection([ref])
       startDraft([ref])
     }
@@ -181,13 +183,18 @@ export function useExtrudeTool(kernel: KernelState, engine: ViewportEngine | nul
         ? ORIGIN_PLANES[sk.params.on.name as OriginPlaneName]
         : sketchFrames[skId]
     if (!frame) return null
-    const reg = (kernel.regions[skId] ?? []).find((r) => r.name === first.name)
-    if (!reg) return null
+    const covered = coveredRegions(kernel.regions[skId] ?? [], first.name)
+    if (covered.length === 0) return null
     const n = frame.normal
     const dir: Vec3 = extrude.params.direction === -1 ? [-n[0], -n[1], -n[2]] : n
     const dist = evalStored(extrude.params.distance) ?? NaN
     const startMm = evalStored(extrude.params.startOffset ?? '0') ?? 0
-    const base = regionCenter(reg)
+    const centres = covered.map(regionCenter)
+    const base: Vec3 = [
+      centres.reduce((s, c) => s + c[0], 0) / centres.length,
+      centres.reduce((s, c) => s + c[1], 0) / centres.length,
+      centres.reduce((s, c) => s + c[2], 0) / centres.length,
+    ]
     const origin: Vec3 =
       Number.isFinite(startMm) && startMm !== 0
         ? [base[0] + n[0] * startMm, base[1] + n[1] * startMm, base[2] + n[2] * startMm]
@@ -223,6 +230,7 @@ export function useExtrudeTool(kernel: KernelState, engine: ViewportEngine | nul
       units={units}
       busy={kernel.busy}
       isCurrent={kernel.isDraftCurrent}
+      shapes={extrude.params.profiles.map((p) => textLabelOfRef(p, features, kernel.regions)).filter((l): l is string => l !== null)}
       failure={status && !status.ok ? (status.message ?? 'This shape could not be built.') : undefined}
       noEffect={noEffect}
       editingStep={stepIndex}
@@ -244,6 +252,8 @@ interface CardProps {
   units: DisplayUnit
   busy: boolean
   isCurrent: () => boolean
+  /** Names of the picked profiles that are sketch text, shown in the card ('Text “HELLO”'). */
+  shapes?: string[]
   failure?: string
   /** A Cut or Intersect that leaves the solid unchanged. */
   noEffect: boolean
@@ -253,7 +263,7 @@ interface CardProps {
   onCancel: () => void
 }
 
-function ExtrudeCard({ draft, bodies, units, busy, isCurrent, failure, noEffect, editingStep, onChange, onApply, onCancel }: CardProps) {
+function ExtrudeCard({ draft, bodies, units, busy, isCurrent, shapes, failure, noEffect, editingStep, onChange, onApply, onCancel }: CardProps) {
   const p = draft.params
   const extent = p.extent ?? 'distance'
   const length = useLengthInput(p.distance, units, (distance) => onChange({ distance }))
@@ -296,6 +306,11 @@ function ExtrudeCard({ draft, bodies, units, busy, isCurrent, failure, noEffect,
       onApply={hasOffset ? offset.guard(applyAction) : applyAction}
       onCancel={onCancel}
     >
+      {shapes && shapes.length > 0 ? (
+        <ParameterRow label="Shape">
+          <p className="text-sm">{shapes.join(', ')}</p>
+        </ParameterRow>
+      ) : null}
       <NumericInput label="Distance" disabled={extent === 'throughAll'} {...length.field} />
       <ParameterRow label="Extent">
         <SegmentedControl

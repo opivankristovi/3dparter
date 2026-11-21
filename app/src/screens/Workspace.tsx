@@ -226,7 +226,7 @@ function Shell({
         group: 'Selection',
         onRun: () => useToolStore.getState().setSelectionFilter(filter),
       })),
-      { id: 'import', label: 'Import STEP', group: 'File', onRun: () => setImportOpen(true) },
+      { id: 'import', label: 'Import file', group: 'File', onRun: () => setImportOpen(true) },
       { id: 'export', label: 'Export (STL / 3MF / STEP / OBJ / GLB)', group: 'File', onRun: () => setExportOpen(true) },
       {
         id: 'export.project',
@@ -326,7 +326,7 @@ function Shell({
                 items={[
                   { label: drawerOpen ? 'Hide panel' : 'Show panel', onSelect: () => setDrawerOpen((o) => !o) },
                   { label: activeTool === 'measure' ? 'Close Measure' : 'Measure', onSelect: () => setActiveTool(activeTool === 'measure' ? null : 'measure') },
-                  { label: 'Import STEP', onSelect: () => setImportOpen(true) },
+                  { label: 'Import file', onSelect: () => setImportOpen(true) },
                   { label: 'Keyboard shortcuts', onSelect: () => setShortcutsOpen(true) },
                   { label: 'Settings', onSelect: () => setSettingsOpen(true) },
                   { label: dark ? 'Light theme' : 'Dark theme', onSelect: toggleTheme },
@@ -442,7 +442,7 @@ function Shell({
       <ImportDialog
         open={importOpen}
         onOpenChange={setImportOpen}
-        onImport={(filename, content) => {
+        onImport={({ filename, format, content, triangles }) => {
           const doc = useProjectStore.getState().doc
           const cleanName = filename.replace(/\.[^.]+$/, '').trim()
           const f: ImportFeature = {
@@ -450,9 +450,14 @@ function Shell({
             type: 'import',
             name: cleanName || nextFeatureName(doc, 'import'),
             suppressed: false,
-            params: { filename, format: 'step', content },
+            params: {
+              filename,
+              format,
+              content,
+              ...(triangles !== undefined ? { meshInfo: { triangles, unit: 'mm' as const } } : {}),
+            },
           }
-          addFeature(f, 'Import STEP')
+          addFeature(f, `Import ${filename}`)
           useProjectStore.getState().setSelection([{ kind: 'body', name: f.id }])
         }}
       />

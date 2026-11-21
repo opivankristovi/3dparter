@@ -65,8 +65,8 @@ test.describe('M5 edge & negative cases', () => {
       mimeType: 'application/iges',
       buffer: Buffer.from('IGES header'),
     })
-    await dlg.getByRole('button', { name: 'Import', exact: true }).click()
-    await expect(dlg.getByRole('alert')).toContainText(/only \.step and \.stp/i)
+    // The file is checked as soon as it is chosen, so the message appears without clicking Import.
+    await expect(dlg.getByRole('alert')).toContainText(/Unsupported file format/i)
     await expect(dlg).toBeVisible()
 
     // Valid extension but missing ISO-10303-21 header.
@@ -75,7 +75,6 @@ test.describe('M5 edge & negative cases', () => {
       mimeType: 'application/step',
       buffer: Buffer.from('not a real step file'),
     })
-    await dlg.getByRole('button', { name: 'Import', exact: true }).click()
     await expect(dlg.getByRole('alert')).toContainText(/valid STEP/i)
     await expect(dlg).toBeVisible()
 
@@ -503,7 +502,7 @@ test.describe('@mobile M5 phone layout (BUG-025)', () => {
     await shortcutDlg.getByRole('button', { name: 'Done' }).click()
 
     await page.getByRole('button', { name: 'More' }).click()
-    await page.getByRole('menuitem', { name: 'Import STEP' }).click()
+    await page.getByRole('menuitem', { name: 'Import file' }).click()
     await expect(page.getByRole('dialog', { name: 'Import' })).toBeVisible()
   })
 })

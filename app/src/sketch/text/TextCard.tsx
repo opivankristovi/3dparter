@@ -21,10 +21,11 @@ import { commitText } from './commands'
 import { useTextUi } from './textUi'
 import type { TextSession } from './textUi'
 
-type Parsed = { ok: true; value: number; preview?: string } | { ok: false; message: string }
+/** `expr` is set when the text is a formula or variable (kept so the number follows the variables). */
+type Parsed = { ok: true; value: number; preview?: string; expr?: string } | { ok: false; message: string }
 
 /** A number field that holds back invalid text and only passes valid values on. */
-function useNumberField(current: string, parse: (text: string) => Parsed, onValue: (v: number) => void) {
+function useNumberField(current: string, parse: (text: string) => Parsed, onValue: (v: number, expr?: string) => void) {
   const [typed, setTyped] = useState<string | null>(null)
   const suggestions = useVariableSuggestions('mm')
   const check = (text: string): FieldFeedback => {
@@ -46,7 +47,7 @@ function useNumberField(current: string, parse: (text: string) => Parsed, onValu
           return
         }
         setTyped(null)
-        onValue(r.value)
+        onValue(r.value, r.expr)
       },
     },
   }
@@ -56,12 +57,12 @@ const scope = () => scopeOf(useProjectStore.getState().doc)
 
 function parseLength(text: string, units: DisplayUnit): Parsed {
   const r = checkFieldText(text, units, { kind: 'length', positive: true }, scope())
-  return r.ok ? { ok: true, value: r.value, ...(r.isExpression ? { preview: r.preview } : {}) } : { ok: false, message: r.message }
+  return r.ok ? { ok: true, value: r.value, ...(r.isExpression ? { preview: r.preview, expr: r.expr } : {}) } : { ok: false, message: r.message }
 }
 
 function parseDegrees(text: string): Parsed {
   const r = checkFieldText(text, 'mm', { kind: 'angle' }, scope())
-  return r.ok ? { ok: true, value: r.value, ...(r.isExpression ? { preview: r.preview } : {}) } : { ok: false, message: r.message }
+  return r.ok ? { ok: true, value: r.value, ...(r.isExpression ? { preview: r.preview, expr: r.expr } : {}) } : { ok: false, message: r.message }
 }
 
 function parsePercent(text: string): Parsed {
@@ -103,8 +104,16 @@ function TextCard({ session }: { session: TextSession }) {
   const empty = draft.text.trim() === ''
   const path = draft.path
 
-  const size = useNumberField(formatDisplay(draft.size, units, precision), (t) => parseLength(t, units), (v) => change({ size: v }))
-  const turn = useNumberField(num((draft.rotation * 180) / Math.PI), parseDegrees, (v) => change({ rotation: (v * Math.PI) / 180 }))
+  const size = useNumberField(
+    draft.sizeExpr ?? formatDisplay(draft.size, units, precision),
+    (t) => parseLength(t, units),
+    (v, expr) => change({ size: v, sizeExpr: expr }),
+  )
+  const turn = useNumberField(
+    draft.rotationExpr ?? num((draft.rotation * 180) / Math.PI),
+    parseDegrees,
+    (v, expr) => change({ rotation: (v * Math.PI) / 180, rotationExpr: expr }),
+  )
   const start = useNumberField(
     num((path?.offset ?? 0) * 100),
     parsePercent,

@@ -9,6 +9,7 @@ import {
   cast,
   getOC,
   makeCircle,
+  makeBezierCurve,
   makeCompound,
   makeFace,
   makeLine,
@@ -19,6 +20,7 @@ import {
   type Face,
 } from 'replicad'
 import type { PlaneFrame, SketchEntity, Vec2, Vec3 } from '../doc/types'
+import type { TextSegmentEntity } from '../sketch/text/outline'
 import type { Loop, Region } from './regions'
 
 export interface BuiltBody {
@@ -75,7 +77,14 @@ export function loopEdges(
     const e = entities.get(seg.id)
     if (!e || e.type === 'text') throw new Error('A sketch line this shape used is gone.')
     if (e.type === 'line') {
-      edges.push(scope.track(seg.reversed ? makeLine(P(e.b), P(e.a)) : makeLine(P(e.a), P(e.b))))
+      // A glyph segment that is a curve carries its control points: one true Bezier edge, not facets.
+      const curve = (e as TextSegmentEntity).curve
+      if (curve && curve.kind !== 'line') {
+        const pts = seg.reversed ? [...curve.pts].reverse() : curve.pts
+        edges.push(scope.track(makeBezierCurve(pts.map(P))))
+      } else {
+        edges.push(scope.track(seg.reversed ? makeLine(P(e.b), P(e.a)) : makeLine(P(e.a), P(e.b))))
+      }
     } else if (e.type === 'circle') {
       edges.push(scope.track(makeCircle(e.radius, P(e.center), frame.normal)))
     } else {
@@ -113,9 +122,50 @@ export function buildRegionFace(
 
 // ---- entity matching ---------------------------------------------------------------------------
 
+function bezierAt(pts: Vec2[], t: number): Vec2 {
+  let cur = pts
+  while (cur.length > 1) {
+    const next: Vec2[] = []
+    for (let i = 0; i + 1 < cur.length; i++) {
+      next.push([cur[i][0] + (cur[i + 1][0] - cur[i][0]) * t, cur[i][1] + (cur[i + 1][1] - cur[i][1]) * t])
+    }
+    cur = next
+  }
+  return cur[0]
+}
+
+/** Distance from a point to a Bezier curve: coarse samples, then a ternary search around the best one. */
+function distToBezier(p: Vec2, pts: Vec2[]): number {
+  const d = (t: number) => {
+    const q = bezierAt(pts, t)
+    return Math.hypot(p[0] - q[0], p[1] - q[1])
+  }
+  const N = 48
+  let bi = 0
+  let bd = Infinity
+  for (let i = 0; i <= N; i++) {
+    const v = d(i / N)
+    if (v < bd) {
+      bd = v
+      bi = i
+    }
+  }
+  let lo = Math.max(0, (bi - 1) / N)
+  let hi = Math.min(1, (bi + 1) / N)
+  for (let i = 0; i < 50; i++) {
+    const m1 = lo + (hi - lo) / 3
+    const m2 = hi - (hi - lo) / 3
+    if (d(m1) < d(m2)) hi = m2
+    else lo = m1
+  }
+  return Math.min(bd, d((lo + hi) / 2))
+}
+
 function distToEntity(p: Vec2, e: SketchEntity): number {
   if (e.type === 'text') return Infinity
   if (e.type === 'line') {
+    const curve = (e as TextSegmentEntity).curve
+    if (curve && curve.kind !== 'line') return distToBezier(p, curve.pts)
     const dx = e.b[0] - e.a[0]
     const dy = e.b[1] - e.a[1]
     const l2 = dx * dx + dy * dy

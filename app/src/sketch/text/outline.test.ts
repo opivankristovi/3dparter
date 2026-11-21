@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest'
 import type { CircleEntity, Sketch, TextEntity } from '../../doc/types'
 import { findRegions } from '../../kernel/regions'
-import { contourBounds, expandText, textContours } from './outline'
+import { contourBounds, expandText, textContours, textCurves, textShapes } from './outline'
 import { loadTestFont } from './testFont'
 import type { Font } from './font'
 
@@ -116,5 +116,64 @@ describe('sketch text outlines', () => {
     expect(b.min[0]).toBeGreaterThanOrEqual(9.9)
     expect(b.min[1]).toBeGreaterThanOrEqual(-0.1)
     expect(b.max[1]).toBeCloseTo(10, 0)
+  })
+})
+
+describe('sketch text segments and kerning', () => {
+  it('keeps one segment per font path command, with exact curves', () => {
+    const t = text({ text: 'O' })
+    const shapes = textShapes(t, sketchOf(t), font)
+    expect(shapes).toHaveLength(2)
+    for (const c of shapes) {
+      // A few curve segments, each flattened into several polyline points.
+      expect(c.segs.length).toBeLessThan(c.points.length)
+      expect(c.segs.some((s) => s.kind !== 'line')).toBe(true)
+      // Walking order is continuous and closed, counter-clockwise.
+      c.segs.forEach((s, i) => {
+        const next = c.segs[(i + 1) % c.segs.length]
+        expect(s.pts[s.pts.length - 1]).toEqual(next.pts[0])
+      })
+      let a = 0
+      c.points.forEach((p, i) => {
+        const q = c.points[(i + 1) % c.points.length]
+        a += p[0] * q[1] - q[0] * p[1]
+      })
+      expect(a).toBeGreaterThan(0)
+    }
+  })
+
+  it('exposes the curves by segment id and expands text into matching chords', () => {
+    const t = text({ text: 'o' })
+    const curves = textCurves(sketchOf(t), font)
+    const expanded = expandText(sketchOf(t), font)
+    expect(expanded.entities.length).toBe(curves.size)
+    for (const e of expanded.entities) {
+      const c = curves.get(e.id)!
+      expect(c).toBeDefined()
+      expect(e.type === 'line' && e.a).toEqual(c.pts[0])
+      expect(e.type === 'line' && e.b).toEqual(c.pts[c.pts.length - 1])
+    }
+    expect([...curves.values()].some((c) => c.kind !== 'line')).toBe(true)
+  })
+
+  it('applies the font kerning pairs when laying out text', () => {
+    const kerned = textContours(text({ text: 'AV' }), sketchOf(text({ text: 'AV' })), font)
+    const noKerning = Object.create(font) as Font
+    noKerning.getKerningValue = () => 0
+    const plain = textContours(text({ text: 'AV' }), sketchOf(text({ text: 'AV' })), noKerning)
+    const right = (cs: number[][][]) => contourBounds(cs as never)!.max[0]
+    // "AV" is the classic pair: the V tucks in under the A.
+    expect(right(kerned as never)).toBeLessThan(right(plain as never) - 0.1)
+  })
+
+  it('kerns text on a path too', () => {
+    const c: CircleEntity = { id: 'c1', type: 'circle', construction: false, center: [0, 0], radius: 30 }
+    const t = text({ text: 'AV', path: { entityId: 'c1', offset: 0.25, side: 'outside' } })
+    const noKerning = Object.create(font) as Font
+    noKerning.getKerningValue = () => 0
+    const a = textContours(t, sketchOf(c, t), font)
+    const b = textContours(t, sketchOf(c, t), noKerning)
+    const lastX = (cs: number[][][]) => cs[cs.length - 1][0][0]
+    expect(lastX(a as never)).not.toBeCloseTo(lastX(b as never), 2)
   })
 })

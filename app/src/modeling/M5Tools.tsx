@@ -32,6 +32,7 @@ import { Switch } from '../ui/Switch'
 import { applyDraft, cancelDraft, changeDraft, useAngleInput, useSignedLengthInput } from './draft'
 import { MODE_WORDS, bodyOfFace, countLabel, refsOfKind, sameRef, sketchOfRegion, toggleRef } from './logic'
 import { extrudeTargetPool } from './picking'
+import { textLabelOfRef } from './profileLabel'
 
 export interface M5ToolResult {
   card: ReactNode
@@ -88,6 +89,8 @@ function refLabel(
   }
   if (ref.kind === 'sketchRegion') {
     const [skId] = ref.name.split('/region:')
+    const textLabel = textLabelOfRef(ref, features, regions)
+    if (textLabel) return textLabel
     const sk = features.find((f) => f.id === skId)?.name ?? 'Sketch'
     const list = regions?.[skId] ?? []
     const idx = list.findIndex((r) => r.name === ref.name)

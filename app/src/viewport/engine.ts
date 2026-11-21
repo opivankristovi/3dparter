@@ -12,6 +12,7 @@ import type { MeshData, SketchRegionData } from '../kernel/api'
 import type { EntityState } from '../sketch/solver/defined'
 import { circlePolyline, localToWorld, rayPlane, worldToLocal } from '../sketch/geometry'
 import { textSegments } from '../sketch/text/draw'
+import { refCoversRegion, wholeTextName } from '../sketch/text/regionRef'
 import { buildGroups, faceNameAtTriangle, sortFaces } from './pick'
 import { EDGE_PICK_PX, VERTEX_PICK_PX, edgeHint, edgeSegments, extractVerticesFromEdges, faceHint, nearestOnEdge2D, segIntersectsRect2D } from './hints'
 import type { RefHint } from './hints'
@@ -463,7 +464,7 @@ export class ViewportEngine {
       if (!this.pickEnabled || e.button !== 0) return
       const d = this.down
       if (d && Math.hypot(e.clientX - d.x, e.clientY - d.y) > 5) return
-      const hit = this.pickAt(e.clientX, e.clientY)
+      const hit = this.pickAt(e.clientX, e.clientY, e.altKey)
       this.onPick(hit, e.shiftKey)
     }
     canvas.addEventListener('pointermove', onMove)
@@ -1049,8 +1050,9 @@ export class ViewportEngine {
   }
 
   private stateOf(kind: Ref['kind'], name: string): number {
-    const sel = this.selection.some((r) => r.kind === kind && r.name === name)
-    const hov = this.hover?.kind === kind && this.hover.name === name
+    const covers = (refName: string) => (kind === 'sketchRegion' ? refCoversRegion(refName, name) : refName === name)
+    const sel = this.selection.some((r) => r.kind === kind && covers(r.name))
+    const hov = this.hover?.kind === kind && covers(this.hover.name)
     return (sel ? 2 : 0) + (hov ? 1 : 0)
   }
 
@@ -1145,7 +1147,11 @@ export class ViewportEngine {
     this.raycaster.setFromCamera(new THREE.Vector2(x, y), this.camera)
   }
 
-  pickAt(clientX: number, clientY: number): Ref | null {
+  /**
+   * What is under the pointer. A letter of sketch text answers with the whole text ('<textId>~*') unless
+   * `single` (Alt held), which answers with that one letter.
+   */
+  pickAt(clientX: number, clientY: number, single = false): Ref | null {
     this.scene.updateMatrixWorld()
     this.camera.updateMatrixWorld()
     this.setNdc(clientX, clientY)
@@ -1164,6 +1170,11 @@ export class ViewportEngine {
     if (hit && hit.object.userData.kind === 'originPlane' && pickKind === 'face') {
       const bodyHit = hits.find((h) => h.object.userData.kind === 'body')
       if (bodyHit) hit = bodyHit
+    }
+    // A sketch shape wins over a plane that passes in front of it (or lies in the same plane).
+    if (hit && (hit.object.userData.kind === 'originPlane' || hit.object.userData.kind === 'constructionPlane')) {
+      const region = hits.find((h) => h.object.userData.kind === 'sketchRegion')
+      if (region) hit = region
     }
     // A sketch shape that lies in the plane of a solid's face wins over that face.
     if (hit && hit.object.userData.kind === 'body') {
@@ -1184,7 +1195,10 @@ export class ViewportEngine {
     const ud = hit.object.userData as { kind: string; name?: string; bodyId?: string }
     if (ud.kind === 'originPlane') return { kind: 'originPlane', name: ud.name as string }
     if (ud.kind === 'constructionPlane') return { kind: 'constructionPlane', name: ud.name as string }
-    if (ud.kind === 'sketchRegion') return { kind: 'sketchRegion', name: ud.name as string }
+    if (ud.kind === 'sketchRegion') {
+      const name = ud.name as string
+      return { kind: 'sketchRegion', name: (!single && wholeTextName(name)) || name }
+    }
     const body = this.bodies.get(ud.bodyId as string)
     if (!body) return null
     if (pickKind === 'solid') return { kind: 'body', name: body.id }
@@ -1401,7 +1415,7 @@ export class ViewportEngine {
   }
 
   private updateHover(e: PointerEvent) {
-    this.setHover(this.pickAt(e.clientX, e.clientY))
+    this.setHover(this.pickAt(e.clientX, e.clientY, e.altKey))
   }
 
   private setHover(ref: Ref | null) {
