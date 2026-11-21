@@ -34,7 +34,16 @@ export default defineConfig({
     // Off by default so the everyday suite stays Chromium-only and fast.
     ...(process.env.CROSS_BROWSER
       ? [
-          { name: 'firefox-desktop', use: { browserName: 'firefox' as const, viewport: { width: 1440, height: 900 } }, grepInvert: /@mobile/ },
+          {
+            name: 'firefox-desktop',
+            use: {
+              browserName: 'firefox' as const,
+              viewport: { width: 1440, height: 900 },
+              // CI machines have no GPU; headless Firefox only falls back to software WebGL (Mesa llvmpipe) when forced.
+              launchOptions: { firefoxUserPrefs: { 'webgl.force-enabled': true, 'webgl.disabled': false } },
+            },
+            grepInvert: /@mobile/,
+          },
           { name: 'webkit-desktop', use: { browserName: 'webkit' as const, viewport: { width: 1440, height: 900 } }, grepInvert: /@mobile/ },
           { name: 'webkit-mobile', use: { browserName: 'webkit' as const, viewport: { width: 390, height: 844 }, hasTouch: true }, grep: /@mobile/ },
         ]
