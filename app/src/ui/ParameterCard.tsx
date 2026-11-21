@@ -88,6 +88,15 @@ export function ParameterCard({
 
   const close = onClose ?? onCancel
 
+  // A click on Apply goes through the same queue as Enter. Commit what is still typed in the focused field first:
+  // browsers differ in whether pressing the button blurs the field before the click, and a click that ran before the
+  // value was committed used to be dropped by the field's guard (seen in Firefox).
+  const applyClicked = () => {
+    const active = document.activeElement
+    if (active instanceof HTMLInputElement && body.current?.contains(active)) active.blur()
+    setQueued(true)
+  }
+
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key === 'Escape') {
       e.stopPropagation()
@@ -140,7 +149,7 @@ export function ParameterCard({
             Cancel
             <ActionKey>Esc</ActionKey>
           </Button>
-          <Button variant="primary" onClick={onApply} disabled={applyDisabled}>
+          <Button variant="primary" onClick={applyClicked} disabled={applyDisabled}>
             Apply
             <ActionKey>Enter</ActionKey>
           </Button>

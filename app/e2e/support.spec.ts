@@ -43,8 +43,8 @@ test.describe('privacy and support pages', () => {
 
 test.describe('report a problem', () => {
   test('logged error shows in the report; copy works; GitHub button is off without a support URL', async ({ page, context, browserName }) => {
-    // WebKit has no clipboard permission names; there the copy is checked through the app's own confirmation instead.
-    if (browserName !== 'webkit') await context.grantPermissions(['clipboard-read', 'clipboard-write'])
+    // Only Chromium has clipboard permission names in Playwright; elsewhere the copy is checked through the app's own confirmation.
+    if (browserName === 'chromium') await context.grantPermissions(['clipboard-read', 'clipboard-write'])
     await page.goto('/#/support')
     await expect(page.getByRole('heading', { level: 1, name: 'Support' })).toBeVisible()
     await raise(page, 'Synthetic failure for the support test')
@@ -60,7 +60,7 @@ test.describe('report a problem', () => {
     await expect(dialog.getByText('The support link is not set up yet')).toBeVisible()
 
     await dialog.getByRole('button', { name: 'Copy report' }).click()
-    if (browserName === 'webkit') {
+    if (browserName !== 'chromium') {
       await expect(page.getByText('Report copied')).toBeVisible()
     } else {
       const copied = await page.evaluate(() => navigator.clipboard.readText())
