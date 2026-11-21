@@ -155,7 +155,11 @@ export function ParameterCard({
             Cancel
             <ActionKey>Esc</ActionKey>
           </Button>
-          <Button variant="primary" onClick={applyClicked} disabled={applyDisabled}>
+          {/* While a preview runs, Apply stays clickable (still marked aria-disabled) and the click is queued: pressing it
+              commits the typed value, which starts a preview that would otherwise disable the button before the mouse
+              comes back up, and the browser would drop the click (BUG-038). The queue applies only once the preview is
+              done and nothing else holds Apply back. */}
+          <Button variant="primary" onClick={applyClicked} disabled={applyDisabled && !busy} aria-disabled={applyDisabled || undefined}>
             Apply
             <ActionKey>Enter</ActionKey>
           </Button>

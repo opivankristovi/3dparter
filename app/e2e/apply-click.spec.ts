@@ -21,3 +21,27 @@ test('BUG-038 Apply clicked while a typed distance is still uncommitted applies 
   await settle(page)
   await expect.poll(async () => (await bodyStats(page))[0].volume).toBeCloseTo(40 * 20 * 25, -1)
 })
+
+test('BUG-038 a human-speed click on Apply right after typing still applies (Apply must not disable mid-click)', async ({ page }) => {
+  await newProject(page)
+  await buildBox(page)
+  await settle(page)
+  await historyItem(page, 'Extrude 1').click()
+  const ext = extrudeCard(page)
+  await expect(ext).toBeVisible()
+  const field = ext.getByLabel('Distance')
+  await field.click()
+  await field.press('Control+a')
+  await page.keyboard.type('25')
+  // Press, hold like a person does, release. Pressing commits the field, which starts a new preview.
+  const box = (await ext.getByRole('button', { name: 'Apply' }).boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.down()
+  // Release while the preview of the new value is still being computed: on a slow machine or a big model that is
+  // exactly where a person's mouse-up lands.
+  await expect(ext).toHaveAttribute('aria-busy', 'true')
+  await page.mouse.up()
+  await expect(ext).toBeHidden()
+  await settle(page)
+  await expect.poll(async () => (await bodyStats(page))[0].volume).toBeCloseTo(40 * 20 * 25, -1)
+})
