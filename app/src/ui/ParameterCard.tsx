@@ -73,12 +73,18 @@ export function ParameterCard({
   // Enter commits the field first (the field's own handler runs before this card's), which starts a new preview.
   // The props of this render are still the old ones, so the apply runs from here once the preview has caught up:
   // by then `busy`, `applyDisabled` and any failure describe the value that was typed.
+  // `recheck` re-runs this while an apply waits: the preview of the typed value can start and finish within one batch
+  // of updates, so `busy` alone may never change and the queued apply would wait forever (BUG-038, seen in Firefox).
+  const [recheck, setRecheck] = useState(0)
   useEffect(() => {
     if (!queued || busy) return
-    if (latest.current.isCurrent && !latest.current.isCurrent()) return
+    if (latest.current.isCurrent && !latest.current.isCurrent()) {
+      const t = window.setTimeout(() => setRecheck((n) => n + 1), 50)
+      return () => window.clearTimeout(t)
+    }
     setQueued(false)
     if (!applyDisabled) latest.current.onApply?.()
-  }, [queued, busy, applyDisabled])
+  }, [queued, busy, applyDisabled, recheck])
 
   useEffect(() => {
     // The first field, or else the first button.
