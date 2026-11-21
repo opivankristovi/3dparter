@@ -3,7 +3,6 @@
 // Section view, Wireframe display mode, Space/Ctrl+1 camera shortcuts, '?' shortcut sheet (S13),
 // viewport context menu, and native .3dparter.json project export/import.
 import { readFileSync } from 'node:fs'
-import AxeBuilder from '@axe-core/playwright'
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 import {
@@ -24,8 +23,7 @@ import {
   sketches,
   toolButton,
   waitCameraStable,
-  waitReady,
-} from './helpers'
+  waitReady, axeFor } from './helpers'
 
 async function expectNoA11yViolations(page: Page, name: string) {
   await page.evaluate(() =>
@@ -36,7 +34,7 @@ async function expectNoA11yViolations(page: Page, name: string) {
         .map((a) => a.finished.catch(() => {})),
     ),
   )
-  const results = await new AxeBuilder({ page }).exclude('canvas').analyze()
+  const results = await axeFor(page).exclude('canvas').analyze()
   const blocking = results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical' || v.impact === 'moderate')
   expect(
     blocking.map((v) => `${v.id} (${v.impact}): ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`),

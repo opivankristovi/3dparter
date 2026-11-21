@@ -1,5 +1,4 @@
 // Sketch text: place it, edit it in the card, put it on a curve, and turn its outlines into solids.
-import AxeBuilder from '@axe-core/playwright'
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 import {
@@ -14,8 +13,7 @@ import {
   settle,
   sketches,
   toolButton,
-  waitCameraStable,
-} from './helpers'
+  waitCameraStable, axeFor } from './helpers'
 import type { SketchEntity, TextEntity } from '../src/doc/types'
 import { variableCommand, variablesOf } from './variablesPanel'
 
@@ -294,7 +292,7 @@ test.describe('sketch text', () => {
     await clickWorld(page, [0, 0, 0])
     await expect(textCard(page)).toBeVisible()
     await waitCameraStable(page)
-    const results = await new AxeBuilder({ page }).exclude('canvas').analyze()
+    const results = await axeFor(page).exclude('canvas').analyze()
     const blocking = results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical' || v.impact === 'moderate')
     expect(blocking.map((v) => `${v.id} (${v.impact})`)).toEqual([])
   })

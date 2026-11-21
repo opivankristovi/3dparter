@@ -1,4 +1,4 @@
-import AxeBuilder from '@axe-core/playwright'
+import { axeFor } from './helpers'
 import { existsSync, readFileSync } from 'node:fs'
 import { expect, test } from './fixtures'
 
@@ -41,7 +41,7 @@ test.describe('landing page', () => {
   test('axe: no moderate, serious or critical violations', async ({ page }) => {
     await page.goto('/#/welcome')
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
-    const results = await new AxeBuilder({ page }).analyze()
+    const results = await axeFor(page).analyze()
     const blocking = results.violations.filter((v) => ['moderate', 'serious', 'critical'].includes(v.impact ?? ''))
     expect(blocking.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`)).toEqual([])
   })

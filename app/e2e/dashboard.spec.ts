@@ -1,8 +1,7 @@
-import AxeBuilder from '@axe-core/playwright'
 import type { Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { expect, test } from './fixtures'
-import { waitReady } from './helpers'
+import { waitReady, axeFor } from './helpers'
 
 const SEED = 'Sample: mounting plate'
 const cards = (page: Page) => page.getByRole('main').getByRole('listitem')
@@ -182,7 +181,7 @@ test.describe('F11 manage projects', () => {
     await page.getByRole('button', { name: 'Theme' }).click()
     await page.getByRole('menuitemcheckbox', { name: 'Dark' }).click()
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
-    const results = await new AxeBuilder({ page }).analyze()
+    const results = await axeFor(page).analyze()
     const blocking = results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical' || v.impact === 'moderate')
     expect(blocking.map((v) => `${v.id} (${v.impact}): ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([])
   })

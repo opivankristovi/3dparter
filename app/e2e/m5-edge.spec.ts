@@ -1,5 +1,4 @@
 // M5 edge, negative, mobile, accessibility, and bug regression tests.
-import AxeBuilder from '@axe-core/playwright'
 import type { Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 import { expect, test } from './fixtures'
@@ -23,12 +22,11 @@ import {
   sketches,
   toolButton,
   waitCameraStable,
-  waitReady,
-} from './helpers'
+  waitReady, axeFor } from './helpers'
 import { addVariableInPanel, openVariables, variableRow } from './variablesPanel'
 
 async function expectNoA11yViolations(page: Page, name: string) {
-  const results = await new AxeBuilder({ page }).exclude('canvas').analyze()
+  const results = await axeFor(page).exclude('canvas').analyze()
   const blocking = results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical' || v.impact === 'moderate')
   const details = blocking.map(
     (v) => `${v.id} (${v.impact}): ${v.nodes.map((n) => `${n.target.join(' ')} (${n.failureSummary})`).join('; ')}`,

@@ -1,9 +1,8 @@
 // STL import (S10): a mesh file becomes a solid you can fillet, survives a reload, and errors read plainly.
 import { readFileSync } from 'node:fs'
-import AxeBuilder from '@axe-core/playwright'
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures'
-import { blendEdges, bodyMeshes, bodyStats, buildBox, doc, near, newProject, settle, waitCameraStable, waitReady } from './helpers'
+import { blendEdges, bodyMeshes, bodyStats, buildBox, doc, near, newProject, settle, waitCameraStable, waitReady, axeFor } from './helpers'
 
 type V = [number, number, number]
 
@@ -26,7 +25,7 @@ function boxStl(w: number, h: number, d: number, skip = 0): Buffer {
 }
 
 async function expectNoA11yViolations(page: Page, name: string) {
-  const results = await new AxeBuilder({ page }).exclude('canvas').analyze()
+  const results = await axeFor(page).exclude('canvas').analyze()
   const blocking = results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical' || v.impact === 'moderate')
   expect(
     blocking.map((v) => `${v.id} (${v.impact})`),

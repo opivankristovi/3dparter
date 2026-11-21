@@ -1,7 +1,6 @@
 // M4 features: Measure tool (S09 / F09), STEP & 3MF export with selection (S11 / F10),
 // box select, 3D vertex picking, selection filters, orientation cube 90-deg roll arrows, and display precision (S12).
 import { readFileSync } from 'node:fs'
-import AxeBuilder from '@axe-core/playwright'
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 import {
@@ -20,11 +19,10 @@ import {
   settle,
   toolButton,
   waitCameraStable,
-  waitReady,
-} from './helpers'
+  waitReady, axeFor } from './helpers'
 
 async function expectNoA11yViolations(page: Page, name: string) {
-  const results = await new AxeBuilder({ page }).exclude('canvas').analyze()
+  const results = await axeFor(page).exclude('canvas').analyze()
   const blocking = results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical' || v.impact === 'moderate')
   expect(
     blocking.map((v) => `${v.id} (${v.impact})`),

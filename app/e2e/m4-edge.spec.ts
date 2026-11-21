@@ -1,6 +1,5 @@
 // M4 edge, negative, mobile, keyboard, and bug regression tests (F09, F10, S03 selection filters, S09, S11, S12).
 import { readFileSync } from 'node:fs'
-import AxeBuilder from '@axe-core/playwright'
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 import {
@@ -19,11 +18,10 @@ import {
   pickTopPlaneAgain,
   settle,
   toolButton,
-  waitCameraStable,
-} from './helpers'
+  waitCameraStable, axeFor } from './helpers'
 
 async function expectNoA11yViolations(page: Page, name: string) {
-  const results = await new AxeBuilder({ page }).exclude('canvas').analyze()
+  const results = await axeFor(page).exclude('canvas').analyze()
   const blocking = results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical' || v.impact === 'moderate')
   expect(
     blocking.map((v) => `${v.id} (${v.impact})`),

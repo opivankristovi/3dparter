@@ -1,6 +1,5 @@
 // M2 modeling tools & workflows: fillet, chamfer, extrude modes + drag handle, revolve, combine, shell, move/copy,
 // construction planes, sketching on a flat face, and upstream edit re-flow.
-import AxeBuilder from '@axe-core/playwright'
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 import {
@@ -16,8 +15,7 @@ import {
   settle,
   sketches,
   toolButton,
-  waitCameraStable,
-} from './helpers'
+  waitCameraStable, axeFor } from './helpers'
 
 const historyItem = (page: Page, name: string) =>
   page.getByRole('tree', { name: 'History' }).getByRole('treeitem', { name: new RegExp(name) })
@@ -108,7 +106,7 @@ async function clickPickableNear(page: Page, world: [number, number, number], ki
 }
 
 async function expectNoA11yViolations(page: Page, name: string) {
-  const results = await new AxeBuilder({ page }).exclude('canvas').analyze()
+  const results = await axeFor(page).exclude('canvas').analyze()
   const blocking = results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical' || v.impact === 'moderate')
   expect(
     blocking.map((v) => `${v.id} (${v.impact})`),

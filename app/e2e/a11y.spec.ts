@@ -1,4 +1,3 @@
-import AxeBuilder from '@axe-core/playwright'
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 import {
@@ -16,13 +15,12 @@ import {
   pickTopPlane,
   settle,
   toolButton,
-  waitCameraStable,
-} from './helpers'
+  waitCameraStable, axeFor } from './helpers'
 import { PANEL_MOUNTED, addVariableInPanel, openVariables, variableCommand } from './variablesPanel'
 
 /** Scans the page; fails on moderate, serious and critical violations and lists every violation (id, impact, targets). */
 async function scan(page: Page, screen: string) {
-  const results = await new AxeBuilder({ page }).exclude('canvas').analyze()
+  const results = await axeFor(page).exclude('canvas').analyze()
   const lines = results.violations.map(
     (v) => `${v.id} [${v.impact}] x${v.nodes.length}: ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`,
   )

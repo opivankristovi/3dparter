@@ -1,9 +1,9 @@
-import AxeBuilder from '@axe-core/playwright'
+import { axeFor } from './helpers'
 import type { Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 
 async function expectNoBlockingViolations(page: Page) {
-  const results = await new AxeBuilder({ page }).analyze()
+  const results = await axeFor(page).analyze()
   const blocking = results.violations.filter((v) => ['moderate', 'serious', 'critical'].includes(v.impact ?? ''))
   expect(blocking.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`)).toEqual([])
 }

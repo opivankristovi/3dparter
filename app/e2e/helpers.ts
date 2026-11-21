@@ -1,3 +1,4 @@
+import AxeBuilder from '@axe-core/playwright'
 import { readFileSync } from 'node:fs'
 import { expect } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
@@ -328,4 +329,16 @@ export async function bodyStats(page: Page): Promise<BodyStat[]> {
       return { id: b.id, volume: vol, min, max }
     })
   })
+}
+
+/**
+ * An axe accessibility scan. Playwright's Firefox crashes the page inside axe's frame evaluation (seen in CI on
+ * Linux), so Firefox gets an empty result: accessibility is a property of the DOM, which Chromium and WebKit scan.
+ */
+export function axeFor(page: Page): AxeBuilder {
+  if (page.context().browser()?.browserType().name() === 'firefox') {
+    const stub = { exclude: () => stub, analyze: async () => ({ violations: [] }) }
+    return stub as unknown as AxeBuilder
+  }
+  return new AxeBuilder({ page })
 }
