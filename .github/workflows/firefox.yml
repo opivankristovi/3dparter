@@ -13,6 +13,10 @@ on:
         description: Parallel browsers
         required: false
         default: '1'
+      trace:
+        description: Keep Playwright traces of failures (on/off)
+        required: false
+        default: 'off'
 
 jobs:
   firefox:
@@ -34,7 +38,7 @@ jobs:
       # (Xvfb) where Mesa's software renderer gives it WebGL.
       - run: sudo apt-get update && sudo apt-get install -y xvfb libgl1-mesa-dri libglx-mesa0
       - name: Firefox end-to-end
-        run: xvfb-run -a --server-args="-screen 0 1920x1080x24" npx playwright test --project=firefox-desktop --headed --reporter=line --max-failures=15 --workers=${{ inputs.workers }} ${{ inputs.grep != '' && format('-g "{0}"', inputs.grep) || '' }}
+        run: xvfb-run -a --server-args="-screen 0 1920x1080x24" npx playwright test --project=firefox-desktop --headed --reporter=line --max-failures=15 --workers=${{ inputs.workers }} --trace=${{ inputs.trace == 'on' && 'retain-on-failure' || 'off' }} ${{ inputs.grep != '' && format('-g "{0}"', inputs.grep) || '' }}
         env:
           CROSS_BROWSER: '1'
       - uses: actions/upload-artifact@v4
