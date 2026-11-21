@@ -46,6 +46,16 @@ export async function waitCameraStable(page: Page) {
   )
 }
 
+/**
+ * Clicks an orientation-cube face. The cube is CSS 3D; Playwright's WebKit build on Windows does not draw or hit-test
+ * 3D transforms (the faces collapse into one flat layer), so there the click event is dispatched on the button itself.
+ */
+export async function clickCubeFace(page: Page, name: string) {
+  const face = page.getByRole('button', { name })
+  if (page.context().browser()?.browserType().name() === 'webkit') await face.dispatchEvent('click')
+  else await face.click()
+}
+
 export async function clientOf(page: Page, world: World): Promise<[number, number]> {
   return page.evaluate((w) => window.__3dparter!.toClient(w), world)
 }

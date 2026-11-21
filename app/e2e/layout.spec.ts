@@ -1,7 +1,7 @@
 // The desktop layout pass: labelled tool rail, view column with the orientation cube, docked tool card
 // with a bottom-centre action bar, and the tighter zoom on entering a sketch.
 import { expect, test } from './fixtures'
-import { buildBox, clientOf, drawRectangle, extrudeCard, newProject, toolButton, waitCameraStable } from './helpers'
+import { buildBox, clickCubeFace, clientOf, drawRectangle, extrudeCard, newProject, toolButton, waitCameraStable } from './helpers'
 import type { Page } from '@playwright/test'
 
 const cameraDir = (page: Page) =>
@@ -25,7 +25,7 @@ test.describe('desktop layout', () => {
     await newProject(page)
     await waitCameraStable(page)
     const home = await cameraDir(page)
-    await page.getByRole('button', { name: 'View from top' }).click()
+    await clickCubeFace(page, 'View from top')
     await waitCameraStable(page)
     const top = await cameraDir(page)
     expect(top[2]).toBeGreaterThan(0.999)

@@ -1,5 +1,5 @@
 // Sketch edge cases and regressions: wide selection marks, persistence, phone width, keyboard, extreme values, reopening, slow engine.
-import type { Page } from '@playwright/test'
+import type { Locator, Page } from '@playwright/test'
 import { expect, test } from './fixtures'
 import {
   bodyMeshes,
@@ -109,12 +109,14 @@ test.describe('sketch edge cases', () => {
     await expect.poll(async () => (await constraintsOf(page)).length).toBe(before)
   })
 
-  test('F04-E13 very large and very small values', async ({ page }) => {
+  test('F04-E13 very large and very small values', async ({ page, browserName }) => {
     await newProject(page)
     await drawRectangle(page)
     const lineLengths = async () =>
       (await entitiesOf(page)).flatMap((e) => (e.type === 'line' ? [Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1])] : []))
     const field = page.getByRole('group', { name: 'Length value' })
+    // The label of a 5000 mm side is far off screen. Chromium still delivers a forced double-click there; WebKit does not, so dispatch the event.
+    const forceDblclick = (b: Locator) => (browserName === 'webkit' ? b.dispatchEvent('dblclick') : b.dblclick({ force: true }))
 
     await page.getByRole('button', { name: /Length dimension 40 mm/ }).dblclick()
     await field.getByRole('textbox').fill('5000')
@@ -123,13 +125,13 @@ test.describe('sketch edge cases', () => {
     await expect.poll(async () => Math.max(...(await lineLengths()))).toBeGreaterThan(4999.99)
     near(Math.max(...(await lineLengths())), 5000, 1e-3)
 
-    await page.getByRole('button', { name: /Length dimension 5000 mm/ }).dblclick({ force: true })
+    await forceDblclick(page.getByRole('button', { name: /Length dimension 5000 mm/ }))
     await field.getByRole('textbox').fill('0.05')
     await page.keyboard.press('Enter')
     await expect(field).toBeHidden()
     await expect.poll(async () => (await lineLengths()).some((l) => Math.abs(l - 0.05) < 1e-6)).toBe(true)
 
-    await page.getByRole('button', { name: /Length dimension 0\.05 mm/ }).dblclick({ force: true })
+    await forceDblclick(page.getByRole('button', { name: /Length dimension 0\.05 mm/ }))
     await field.getByRole('textbox').fill('-5')
     await page.keyboard.press('Enter')
     await expect(field.getByText('The value must be greater than zero.')).toBeVisible()

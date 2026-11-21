@@ -23,11 +23,14 @@ test.describe('landing page', () => {
     }
   })
 
-  test('primary button opens the project list; Tab reaches it', async ({ page }) => {
+  test('primary button opens the project list; Tab reaches it', async ({ page, browserName }) => {
     await page.goto('/#/welcome')
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible()
-    await page.keyboard.press('Tab')
-    await expect(page.getByRole('link', { name: 'Skip to content' })).toBeFocused()
+    // Safari (WebKit) does not Tab to links unless the user turns that on (Option+Tab otherwise), so the first Tab stop is not a link there.
+    if (browserName !== 'webkit') {
+      await page.keyboard.press('Tab')
+      await expect(page.getByRole('link', { name: 'Skip to content' })).toBeFocused()
+    }
     await page.getByRole('link', { name: 'Start a project' }).focus()
     await page.keyboard.press('Enter')
     await expect(page.getByRole('button', { name: 'New project' }).first()).toBeVisible()

@@ -9,6 +9,7 @@ import {
   applyExtrude,
   bodyMeshes,
   buildBox,
+  clickCubeFace,
   clickPickableNear,
   clickWorld,
   doc,
@@ -277,7 +278,7 @@ test.describe('M4 Workspace and I/O', () => {
     await settle(page)
     await waitCameraStable(page)
 
-    await page.getByRole('button', { name: 'View from front' }).click()
+    await clickCubeFace(page, 'View from front')
     await waitCameraStable(page)
 
     const up = () => page.evaluate(() => window.__3dparter!.engine.camera.up.toArray())

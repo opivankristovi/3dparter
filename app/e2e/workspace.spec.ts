@@ -224,7 +224,10 @@ test.describe('F01 first part', () => {
     await expect(b.getByRole('button', { name: 'Reload' })).toBeVisible()
     // No silent overwrite: B still holds the old (empty) document until it reloads.
     expect((await doc(b)).features).toHaveLength(0)
+    // Wait for the page to really reload first: waitReady alone can still see the old page's engine in slower browsers.
+    const reloaded = b.waitForEvent('load')
     await b.getByRole('button', { name: 'Reload' }).click()
+    await reloaded
     await waitReady(b)
     await expect.poll(async () => (await doc(b)).features.length).toBe(1)
     await expect(b.getByText('Changed in another tab. Reload to continue.')).toHaveCount(0)

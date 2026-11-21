@@ -36,12 +36,15 @@ test.describe('clone screens', () => {
     await capture(page, info, 'S03.png')
   })
 
-  /** A fully defined 40 x 20 rectangle, its bottom side selected so the constraint bar shows. */
-  async function sketchWithConstraints(page: Page) {
+  /**
+   * A fully defined 40 x 20 rectangle, its bottom side selected (by clicking `edgePoint`) so the constraint bar shows.
+   * On touch screens the constraint glyphs get 44px hit areas, so there the point must stay clear of them.
+   */
+  async function sketchWithConstraints(page: Page, edgePoint: [number, number, number] = [20, 0, 0]) {
     await newProject(page)
     await drawRectangle(page)
     await toolButton(page, 'Rectangle').click() // back to selection mode
-    await clickWorld(page, [20, 0, 0])
+    await clickWorld(page, edgePoint)
     await expect(page.getByRole('toolbar', { name: 'Constraints', exact: true })).toBeVisible()
     await expect(page.getByRole('status').filter({ hasText: 'Fully defined' })).toBeVisible()
     await page.mouse.move(2, 2) // out of the way of tooltips
@@ -54,7 +57,7 @@ test.describe('clone screens', () => {
   })
 
   test('S04-390 sketching with constraints on a phone @mobile', async ({ page }, info) => {
-    await sketchWithConstraints(page)
+    await sketchWithConstraints(page, [10, 0, 0])
     await capture(page, info, 'S04-390.png')
   })
 
