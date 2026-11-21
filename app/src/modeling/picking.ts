@@ -26,7 +26,7 @@ export function handlePick(ref: Ref | null, additive: boolean, meshes?: Map<stri
     return
   }
   // Move: solids (or faces resolved to their solid) toggle in and out.
-  if (tool === 'move') {
+  if (tool === 'move' || tool === 'scale') {
     if (ref?.kind === 'body') s.setSelection(toggleRef(refsOfKind(s.selection, 'body'), ref))
     else if (ref?.kind === 'face') {
       const bodyId = bodyOfFace(ref.name, meshes)
@@ -211,7 +211,7 @@ export function handleBoxPick(refs: Ref[], additive: boolean, meshes?: Map<strin
   let filtered = refs
   if (tool === 'fillet' || tool === 'chamfer') {
     filtered = refs.filter((r) => r.kind === 'edge')
-  } else if (tool === 'combine' || tool === 'move') {
+  } else if (tool === 'combine' || tool === 'move' || tool === 'scale') {
     filtered = refs.filter((r) => r.kind === 'body')
   } else if (tool === 'mirror' || tool === 'pattern') {
     const tools = useToolStore.getState()

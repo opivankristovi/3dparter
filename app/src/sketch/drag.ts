@@ -29,6 +29,18 @@ export function beginDrag(sketchId: string, base: Sketch, ref: string, grab: Vec
 
 /** Solves with the pointer at `to` and shows the result. Unconstrained or fully pinned geometry stays put. */
 export function updateDrag(s: DragSession, to: Vec2) {
+  const text = s.base.entities.find((e) => e.id === s.ref && e.type === 'text')
+  if (text?.type === 'text') {
+    // Text is outside the solver: it just follows the pointer (text on a path stays where it is).
+    const dx = text.path ? 0 : to[0] - s.grab[0]
+    const dy = text.path ? 0 : to[1] - s.grab[1]
+    s.started = true
+    dragState.active = true
+    useSketchUi.getState().set({
+      preview: s.base.entities.map((e) => (e === text ? { ...text, position: [text.position[0] + dx, text.position[1] + dy] } : e)),
+    })
+    return
+  }
   const r = solveSketch(s.base, { drag: { ref: s.ref, to, grab: s.grab }, scope: scopeOf(useProjectStore.getState().doc) })
   s.started = true
   dragState.active = true

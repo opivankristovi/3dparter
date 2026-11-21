@@ -284,7 +284,9 @@ function mapEndpointTangent(x: Pt, y: Pt, entities: Map<string, SketchEntity>, f
 }
 
 export function buildSystem(sketch: Sketch, opts: BuildOptions = {}): BuiltSystem {
-  const entities = new Map(sketch.entities.map((e) => [e.id, e]))
+  // Text is never sent to the solver, and constraints cannot refer to it.
+  const solvable = sketch.entities.filter((e) => e.type !== 'text')
+  const entities = new Map(solvable.map((e) => [e.id, e]))
   const resolve = makeResolver(entities)
   const primitives: SketchPrimitive[] = []
   const fixes: ParamFix[] = []
@@ -311,7 +313,7 @@ export function buildSystem(sketch: Sketch, opts: BuildOptions = {}): BuiltSyste
   primitives.push({ id: 'origin', type: 'point', x: 0, y: 0, fixed: true })
   primitives.push({ id: 'xAxis.1', type: 'point', x: 1, y: 0, fixed: true })
   primitives.push({ id: 'yAxis.1', type: 'point', x: 0, y: 1, fixed: true })
-  for (const e of sketch.entities) {
+  for (const e of solvable) {
     for (const slot of pointSlots(e)) {
       const pos = getPoint(e, slot) as Vec2
       // A fixed arc keeps its centre, radius and angles pinned; its end points follow from those.
@@ -329,7 +331,7 @@ export function buildSystem(sketch: Sketch, opts: BuildOptions = {}): BuiltSyste
   // Curves
   primitives.push({ id: 'xAxis', type: 'line', p1_id: 'origin', p2_id: 'xAxis.1' })
   primitives.push({ id: 'yAxis', type: 'line', p1_id: 'origin', p2_id: 'yAxis.1' })
-  for (const e of sketch.entities) {
+  for (const e of solvable) {
     if (e.type === 'line') {
       primitives.push({ id: e.id, type: 'line', p1_id: pointId(e.id, 'a'), p2_id: pointId(e.id, 'b') })
     } else if (e.type === 'circle') {

@@ -29,6 +29,7 @@ const GROUPS: ShortcutGroup[] = [
       { label: 'Circle', keys: ['C'] },
       { label: 'Line', keys: ['L'] },
       { label: 'Arc', keys: ['A'] },
+      { label: 'Text', keys: ['I'] },
       { label: 'Trim', keys: ['T'] },
       { label: 'Dimension', keys: ['D'] },
       { label: 'Horizontal', keys: ['H'] },
@@ -46,6 +47,7 @@ const GROUPS: ShortcutGroup[] = [
       { label: 'Shell', keys: ['S'] },
       { label: 'Combine', keys: ['J'] },
       { label: 'Move', keys: ['M'] },
+      { label: 'Scale', keys: ['W'] },
       { label: 'Construction plane', keys: ['P'] },
       { label: 'Measure', keys: ['U'] },
     ],
@@ -83,7 +85,7 @@ export function ShortcutSheetDialog({ open, onOpenChange }: ShortcutSheetDialogP
         </Button>
       }
     >
-      <div className="grid max-h-[60dvh] grid-cols-1 gap-4 overflow-y-auto sm:grid-cols-2">
+      <div tabIndex={0} role="region" aria-label="All shortcuts" className="grid max-h-[60dvh] grid-cols-1 gap-4 overflow-y-auto sm:grid-cols-2">
         {GROUPS.map((group) => (
           <section key={group.title} aria-label={group.title} className="flex flex-col gap-1.5 rounded-md border border-border bg-surface-sunken p-3">
             <h3 className="text-sm font-semibold text-text">{group.title}</h3>

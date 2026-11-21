@@ -88,7 +88,7 @@ export function useSelectDrag(engine: ViewportEngine, live: MutableRefObject<Liv
 
     const onClick = (e: MouseEvent) => {
       const { sketchId: sid, tool } = live.current
-      if (!sid || tool || e.button !== 0 || dragState.suppressClick) return
+      if (!sid || tool || drawBusy.current || e.button !== 0 || dragState.suppressClick) return
       if (e.timeStamp <= enteredAt.current) return
       const sk = currentSketch()
       const at = locate(e)

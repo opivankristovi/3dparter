@@ -52,7 +52,7 @@ export interface WorkspaceProps {
   /** Extra top-bar buttons (e.g. zoom to fit), shown on tablets; on desktop the view column has them. */
   topBarActions?: ReactNode
   /** What the right-hand view column (desktop) needs: the camera, and zoom to fit. */
-  view?: { engine: ViewportEngine | null; onFit: () => void }
+  view?: { engine: ViewportEngine | null; onFit: () => void; onSaveImage?: () => void }
   /** Writes the file for the Export dialog. Without it, Export reports that it is not connected. */
   onExport?: (opts: ExportOptions) => Promise<void>
 }
@@ -159,6 +159,8 @@ function Shell({
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
 
+  const saveImage = view?.onSaveImage
+
   useWorkspaceHotkeys(TOOL_KEYS)
   useSaveOnLeave()
   useCommandPaletteHotkey(() => setPaletteOpen(true))
@@ -225,7 +227,7 @@ function Shell({
         onRun: () => useToolStore.getState().setSelectionFilter(filter),
       })),
       { id: 'import', label: 'Import STEP', group: 'File', onRun: () => setImportOpen(true) },
-      { id: 'export', label: 'Export (STL / 3MF / STEP)', group: 'File', onRun: () => setExportOpen(true) },
+      { id: 'export', label: 'Export (STL / 3MF / STEP / OBJ / GLB)', group: 'File', onRun: () => setExportOpen(true) },
       {
         id: 'export.project',
         label: 'Export project (.3dparter.json)',
@@ -253,10 +255,11 @@ function Shell({
           ts.setDisplayMode(ts.displayMode === 'wireframe' ? 'shaded' : 'wireframe')
         },
       },
+      { id: 'view.image', label: 'Save view as image', group: 'File', onRun: () => saveImage?.() },
       { id: 'shortcuts', label: 'Keyboard shortcuts', group: 'Help', shortcut: '?', onRun: () => setShortcutsOpen(true) },
       { id: 'theme', label: 'Toggle theme', group: 'View', onRun: () => useSettings.getState().toggleTheme() },
     ],
-    [goHome, navigate, sketching, autoOn],
+    [goHome, navigate, sketching, autoOn, saveImage],
   )
 
   const sidebar = (
@@ -366,6 +369,7 @@ function Shell({
             <ViewColumn
               engine={view?.engine ?? null}
               onFit={view?.onFit ?? (() => {})}
+              onSaveImage={view?.onSaveImage}
               panelTab={tab}
               panelOpen={sidebarOpen}
               onOpenPanel={(t) => {

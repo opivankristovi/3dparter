@@ -11,7 +11,7 @@ import { NumericInput } from '../ui/NumericInput'
 import type { ViewportEngine } from '../viewport/engine'
 import { commitBuilt } from './drawCommit'
 import { dragState } from './drag'
-import { localToWorld, samePoint, snapPoint, snapTargets } from './geometry'
+import { localToWorld, noGridFor, samePoint, snapPoint, snapTargets } from './geometry'
 import { finishSketch } from './session'
 import { shapeFor } from './shapes'
 import type { Shape, Tool } from './shapes'
@@ -166,7 +166,7 @@ export function useDrawTool(engine: ViewportEngine, live: MutableRefObject<LiveR
       const ppm = engine.pixelsPerMmAt(localToWorld(raw, fr))
       const targets = snapTargets(entitiesNow())
       if (work.current.start) targets.push(work.current.start)
-      return snapPoint(raw, targets, ppm, { noGrid: e.altKey })
+      return snapPoint(raw, targets, ppm, { noGrid: noGridFor(useSettings.getState().settings.gridSnap, e.altKey) })
     }
 
     const onMove = (e: PointerEvent) => {

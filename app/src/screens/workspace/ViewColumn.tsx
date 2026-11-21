@@ -1,6 +1,6 @@
 // The column of view controls at the right edge: the orientation cube, zoom to fit, home view, display toggles,
 // and the buttons that open the side panel on one of its tabs.
-import { Box, Grid3x3, History, House, Scan, Slice, Variable } from 'lucide-react'
+import { Box, Camera, Grid3x3, History, House, Scan, Slice, Variable } from 'lucide-react'
 import { IconButton } from '../../ui/IconButton'
 import { OrientationCube } from '../../viewport/OrientationCube'
 import type { ViewportEngine } from '../../viewport/engine'
@@ -17,13 +17,15 @@ const PANELS = [
 export interface ViewColumnProps {
   engine: ViewportEngine | null
   onFit: () => void
+  /** Downloads the current view as a PNG. */
+  onSaveImage?: () => void
   /** The side panel's current tab, and whether the panel is open. */
   panelTab: string
   panelOpen: boolean
   onOpenPanel: (tab: string) => void
 }
 
-export function ViewColumn({ engine, onFit, panelTab, panelOpen, onOpenPanel }: ViewColumnProps) {
+export function ViewColumn({ engine, onFit, onSaveImage, panelTab, panelOpen, onOpenPanel }: ViewColumnProps) {
   const sectionView = useToolStore((s) => s.sectionView)
   const displayMode = useToolStore((s) => s.displayMode)
   const setSectionView = useToolStore((s) => s.setSectionView)
@@ -35,6 +37,7 @@ export function ViewColumn({ engine, onFit, panelTab, panelOpen, onOpenPanel }: 
       {rule}
       <IconButton label="Zoom to fit" shortcut="F" icon={<Scan {...ic} />} disabled={!engine} onClick={onFit} tooltipSide="left" />
       <IconButton label="Home view" shortcut="Ctrl 1" icon={<House {...ic} />} disabled={!engine} onClick={() => engine?.resetView()} tooltipSide="left" />
+      <IconButton label="Save view as image" icon={<Camera {...ic} />} disabled={!engine || !onSaveImage} onClick={() => onSaveImage?.()} tooltipSide="left" />
       <IconButton
         label="Section view"
         icon={<Slice {...ic} />}

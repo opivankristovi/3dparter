@@ -184,6 +184,8 @@ export function exprFields(f: Feature): ExprField[] {
       if (rot) out.push({ label: 'Rotation angle', kind: 'angle', value: rot.angle, set: (t) => (rot.angle = t) })
       return out
     }
+    case 'scale':
+      return [{ label: 'Factor', kind: 'length', value: f.params.factor, set: (t) => (f.params.factor = t) }]
     case 'plane':
       return [
         { label: 'Offset', kind: 'length', value: f.params.offset, set: (t) => (f.params.offset = t) },

@@ -47,7 +47,8 @@ function writeEntities(target: SketchEntity[], solved: SketchEntity[]) {
   }
 }
 
-const size = (e: SketchEntity) => (e.type === 'line' ? Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]) : e.radius)
+const size = (e: SketchEntity) =>
+  e.type === 'line' ? Math.hypot(e.b[0] - e.a[0], e.b[1] - e.a[1]) : e.type === 'text' ? e.size : e.radius
 const DEGENERATE = 1e-6
 
 /** Entities that were real before and have collapsed to a point after. */
@@ -233,7 +234,7 @@ export function toggleConstruction(sketchId: string, entityIds: string[]) {
     const f = draft.features.find((x) => x.id === sketchId)
     if (f?.type !== 'sketch') return
     const ids = new Set(entityIds)
-    const hit = f.sketch.entities.filter((e) => ids.has(e.id))
+    const hit = f.sketch.entities.filter((e) => ids.has(e.id) && e.type !== 'text') // text is never construction
     const next = !hit.every((e) => e.construction)
     for (const e of hit) e.construction = next
   })

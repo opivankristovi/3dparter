@@ -7,6 +7,7 @@ import {
   Layers,
   Palette,
   PenLine,
+  Scaling,
   Scissors,
   Upload,
   Variable,
@@ -68,6 +69,8 @@ function featureIcon(type: Feature['type']) {
       return <Scissors {...ic} />
     case 'transform':
       return <MoveIcon {...ic} />
+    case 'scale':
+      return <Scaling {...ic} />
     case 'mirror':
       return <FlipHorizontal2 {...ic} />
     case 'pattern':

@@ -8,8 +8,10 @@ import { SegmentedControl } from '../../ui/SegmentedControl'
 import { Select } from '../../ui/Select'
 import { Switch } from '../../ui/Switch'
 
+export type ExportFormat = 'stl' | '3mf' | 'step' | 'obj' | 'glb'
+
 export interface ExportOptions {
-  format: 'stl' | '3mf' | 'step'
+  format: ExportFormat
   quality: 'high' | 'low'
   binary: boolean
   onlySelected?: boolean
@@ -32,9 +34,9 @@ function Field({ title, children }: { title: string; children: ReactNode }) {
   )
 }
 
-/** S11. Exports visible or selected solids as STL, 3MF or STEP. */
+/** S11. Exports visible or selected solids as STL, 3MF, STEP, OBJ or GLB. */
 export function ExportDialog({ open, onOpenChange, onExport, bodyCount, selectedBodyCount = 0 }: ExportDialogProps) {
-  const [format, setFormat] = useState<'stl' | '3mf' | 'step'>('stl')
+  const [format, setFormat] = useState<ExportFormat>('stl')
   const [quality, setQuality] = useState<'high' | 'low'>('high')
   const [binary, setBinary] = useState(true)
   const [onlySelected, setOnlySelected] = useState(false)
@@ -97,11 +99,13 @@ export function ExportDialog({ open, onOpenChange, onExport, bodyCount, selected
             <Select
               label="Format"
               value={format}
-              onValueChange={(v) => setFormat(v as 'stl' | '3mf' | 'step')}
+              onValueChange={(v) => setFormat(v as ExportFormat)}
               options={[
                 { value: 'stl', label: 'STL' },
                 { value: '3mf', label: '3MF' },
                 { value: 'step', label: 'STEP' },
+                { value: 'obj', label: 'OBJ' },
+                { value: 'glb', label: 'GLB (glTF)' },
               ]}
             />
           </Field>
@@ -118,7 +122,7 @@ export function ExportDialog({ open, onOpenChange, onExport, bodyCount, selected
               />
             </Field>
           ) : null}
-          {format === 'stl' || format === '3mf' ? (
+          {format !== 'step' ? (
             <Field title="Quality">
               <SegmentedControl
                 label="Quality"

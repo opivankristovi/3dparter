@@ -377,10 +377,7 @@ function prefixEdgeName(name: string, prefix: string): string {
  * transform's own history); `prefix` goes in front of every name (used for copies, so names stay unique).
  */
 export function transformBody(body: BuiltBody, spec: TransformSpec, prefix: string): BuiltBody {
-  const oc = getOC()
-  const scope = new Scope()
-  let result: AnyShape | null = null
-  try {
+  return mapBody(body, prefix, (oc, scope) => {
     const move = scope.track(new oc.gp_Trsf())
     move.SetTranslation(scope.track(new oc.gp_Vec(spec.translate[0], spec.translate[1], spec.translate[2])))
     let total = move
@@ -394,7 +391,27 @@ export function transformBody(body: BuiltBody, spec: TransformSpec, prefix: stri
       rot.PreMultiply(move) // rotation first, then the translation
       total = rot
     }
-    const tr = scope.track(new oc.BRepBuilderAPI_Transform(body.shape.wrapped, total, true, false))
+    return total
+  })
+}
+
+/** A body scaled uniformly by `factor` about `center`. Every face and edge keeps its name (same topology). */
+export function scaleBody(body: BuiltBody, factor: number, center: Vec3): BuiltBody {
+  return mapBody(body, '', (oc, scope) => {
+    const trsf = scope.track(new oc.gp_Trsf())
+    trsf.SetScale(scope.track(new oc.gp_Pnt(center[0], center[1], center[2])), factor)
+    return trsf
+  })
+}
+
+/** Applies the transformation `build` makes and carries every face and edge name over (with `prefix` in front). */
+function mapBody(body: BuiltBody, prefix: string, build: (oc: ReturnType<typeof getOC>, scope: Scope) => unknown): BuiltBody {
+  const oc = getOC()
+  const scope = new Scope()
+  let result: AnyShape | null = null
+  try {
+    const total = build(oc, scope)
+    const tr = scope.track(new oc.BRepBuilderAPI_Transform(body.shape.wrapped, total as never, true, false))
     result = cast(tr.Shape())
 
     const faceNames = new Map<number, string>()

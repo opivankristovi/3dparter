@@ -1,5 +1,6 @@
 // Pure sketch maths: plane frames, ray hits, shape builders and snapping. No three.js, no DOM.
 import type { ArcEntity, CircleEntity, LineEntity, PlaneFrame, SketchEntity, Vec2, Vec3 } from '../doc/types'
+import { textPickDistance } from './text/pick'
 
 const dot = (a: Vec3, b: Vec3) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 
@@ -73,12 +74,24 @@ export function snapTargets(entities: SketchEntity[]): Vec2[] {
   const out: Vec2[] = []
   for (const e of entities) {
     if (e.type === 'line') out.push(e.a, e.b)
+    else if (e.type === 'text') out.push(e.position)
     else if (e.type === 'arc') {
       out.push(e.center)
       for (const t of [e.startAngle, e.endAngle]) out.push([e.center[0] + e.radius * Math.cos(t), e.center[1] + e.radius * Math.sin(t)])
     } else out.push(e.center)
   }
   return out
+}
+
+/** The grid step of the sketch cursor, in mm. */
+export const GRID_SNAP_MM = 1
+
+/**
+ * Whether the grid is skipped for this pointer move. With grid snap on, Alt skips it; with grid snap off, Alt
+ * turns it on for as long as it is held. (Point snapping is not affected either way.)
+ */
+export function noGridFor(gridSnap: boolean, altKey: boolean): boolean {
+  return gridSnap === altKey
 }
 
 export interface SnapOptions {
@@ -101,7 +114,7 @@ export interface SnapResult {
  */
 export function snapPoint(raw: Vec2, targets: Vec2[], pxPerMm: number, opts: SnapOptions = {}): SnapResult {
   const radiusPx = opts.radiusPx ?? 8
-  const grid = opts.grid ?? 1
+  const grid = opts.grid ?? GRID_SNAP_MM
   let best: Vec2 | null = null
   let bestD = Infinity
   for (const t of targets) {
@@ -148,6 +161,7 @@ export function entityAt(entities: SketchEntity[], p: Vec2, tolMm: number): Sket
     let d = Infinity
     if (e.type === 'line') d = distToSegment(p, e.a, e.b)
     else if (e.type === 'circle') d = Math.abs(Math.hypot(p[0] - e.center[0], p[1] - e.center[1]) - e.radius)
+    else if (e.type === 'text') d = textPickDistance(e, entities, p, tolMm)
     else d = distToArc(p, e)
     if (d <= bestD) {
       best = e

@@ -42,6 +42,7 @@ function refUses(f: Feature): RefUse[] {
     case 'boolean':
       return whole([f.params.target, ...f.params.tools])
     case 'transform':
+    case 'scale':
       return whole(f.params.bodies)
     case 'split':
       return [...whole([f.params.body]), ...piece([f.params.plane])]
@@ -160,6 +161,12 @@ export function featureDeps(doc: ProjectDocument): Map<string, string[]> {
       }
       case 'shell': {
         const bodies = union([f.params.body, ...f.params.removeFaces])
+        touch(bodies, i)
+        owners.set(f.id, bodies)
+        break
+      }
+      case 'scale': {
+        const bodies = union(f.params.bodies)
         touch(bodies, i)
         owners.set(f.id, bodies)
         break

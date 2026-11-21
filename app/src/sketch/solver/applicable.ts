@@ -15,7 +15,7 @@ function kindsOf(selection: string[], sketch: Sketch): Kind[] | null {
       continue
     }
     const e = sketch.entities.find((x) => x.id === p.entityId)
-    if (!e) return null
+    if (!e || e.type === 'text') return null
     if (p.kind === 'point') out.push('P')
     else out.push(e.type === 'line' ? 'L' : e.type === 'circle' ? 'C' : 'A')
   }

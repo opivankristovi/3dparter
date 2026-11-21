@@ -87,6 +87,7 @@ export function buildLoft(featureId: string, sections: ProfileSection[]): BuiltB
 export function edgeFromSketchEntity(entity: SketchEntity, frame: PlaneFrame): Edge {
   const P = (p: Vec2): Vec3 => localToWorld(p, frame)
   if (entity.type === 'line') return makeLine(P(entity.a), P(entity.b))
+  if (entity.type === 'text') throw new Error('Text cannot be used as a path.')
   if (entity.type === 'circle') return makeCircle(entity.radius, P(entity.center), frame.normal)
   let sweep = (entity.endAngle - entity.startAngle) % TWO_PI
   if (sweep < 0) sweep += TWO_PI

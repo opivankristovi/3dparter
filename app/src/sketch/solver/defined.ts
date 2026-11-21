@@ -23,6 +23,7 @@ export function entityStates(sketch: Sketch, scope?: Scope): Record<string, Enti
   }
   const out: Record<string, EntityState> = {}
   for (const e of sketch.entities) {
+    if (e.type === 'text') continue // text is not part of the solver
     if (conflicted.has(e.id)) out[e.id] = 'conflict'
     else if (base.dof === 0) out[e.id] = 'full'
     else out[e.id] = dofWithFixed(sketch, new Set([e.id]), scope).dof === base.dof ? 'full' : 'under'

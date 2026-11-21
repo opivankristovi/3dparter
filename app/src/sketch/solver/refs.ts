@@ -40,6 +40,7 @@ export function refEntityId(ref: string): string | null {
 export function pointSlots(e: SketchEntity): PointSlot[] {
   if (e.type === 'line') return ['a', 'b']
   if (e.type === 'circle') return ['center']
+  if (e.type === 'text') return []
   return ['center', 'start', 'end']
 }
 
@@ -51,6 +52,7 @@ export function arcPoint(a: ArcEntity, angle: number): Vec2 {
 export function getPoint(e: SketchEntity, slot: PointSlot): Vec2 | null {
   if (e.type === 'line') return slot === 'a' ? e.a : slot === 'b' ? e.b : null
   if (e.type === 'circle') return slot === 'center' ? e.center : null
+  if (e.type === 'text') return null
   if (slot === 'center') return e.center
   if (slot === 'start') return arcPoint(e, e.startAngle)
   if (slot === 'end') return arcPoint(e, e.endAngle)
@@ -67,6 +69,7 @@ export function setPoint(e: SketchEntity, slot: PointSlot, p: Vec2): SketchEntit
     if (slot === 'b') return { ...e, b: [p[0], p[1]] }
     return e
   }
+  if (e.type === 'text') return e
   if (slot === 'center') return { ...e, center: [p[0], p[1]] }
   if (e.type === 'circle') return e
   const ang = Math.atan2(p[1] - e.center[1], p[0] - e.center[0])

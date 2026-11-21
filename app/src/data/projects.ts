@@ -16,7 +16,7 @@ export interface ListOptions {
   onlyDeleted?: boolean
 }
 
-export const DEFAULT_SETTINGS: SettingsRow = { id: 'app', theme: 'system', units: 'mm', precision: 2 }
+export const DEFAULT_SETTINGS: SettingsRow = { id: 'app', theme: 'system', units: 'mm', precision: 2, gridSnap: true }
 
 // ---- cross-tab notice -------------------------------------------------------------------
 

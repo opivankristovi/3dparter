@@ -7,6 +7,7 @@ import { meshBody, sketchRegionData } from './mesh'
 import { KERNEL_VERSION } from './occ'
 import { loadOCBrowser } from './occ.browser'
 import { Regenerator } from './regenerate'
+import { ensureFont } from '../sketch/text/font'
 
 const kernel = new Regenerator()
 let ready: Promise<{ version: string; ms: number }> | null = null
@@ -14,7 +15,8 @@ let ready: Promise<{ version: string; ms: number }> | null = null
 function init(): Promise<{ version: string; ms: number }> {
   if (!ready) {
     const t0 = performance.now()
-    const p = loadOCBrowser().then(() => ({ version: KERNEL_VERSION, ms: performance.now() - t0 }))
+    // The text font loads with the engine, so sketches with text have their outlines from the first regenerate.
+    const p = Promise.all([loadOCBrowser(), ensureFont().catch(() => null)]).then(() => ({ version: KERNEL_VERSION, ms: performance.now() - t0 }))
     p.catch(() => {
       ready = null // let the next call retry
     })

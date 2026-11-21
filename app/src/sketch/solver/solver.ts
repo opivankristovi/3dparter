@@ -98,6 +98,7 @@ function readPoint(w: GcsWrapper, id: string): Vec2 {
 
 /** Entity coordinates after the solve. An entity that did not really move keeps its exact numbers. */
 function readEntity(w: GcsWrapper, e: SketchEntity): SketchEntity {
+  if (e.type === 'text') return e
   if (e.type === 'line') {
     const a = readPoint(w, pointId(e.id, 'a'))
     const b = readPoint(w, pointId(e.id, 'b'))
@@ -155,6 +156,7 @@ function run(sketch: Sketch, opts: BuildOptions, read: boolean): RawRun {
 function entityChecksum(e: SketchEntity): number {
   if (e.type === 'line') return e.a[0] + e.a[1] + e.b[0] + e.b[1]
   if (e.type === 'circle') return e.center[0] + e.center[1] + e.radius
+  if (e.type === 'text') return e.position[0] + e.position[1] + e.size + e.rotation
   return e.center[0] + e.center[1] + e.radius + e.startAngle + e.endAngle
 }
 

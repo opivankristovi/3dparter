@@ -55,7 +55,7 @@ export function measureConstraint(sketch: Sketch, c: SketchConstraint): number |
     case 'radius':
     case 'diameter': {
       const e = ents.get(r0)
-      if (!e || e.type === 'line') return null
+      if (!e || e.type === 'line' || e.type === 'text') return null
       return c.type === 'radius' ? e.radius : e.radius * 2
     }
     case 'angle': {

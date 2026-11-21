@@ -11,6 +11,7 @@ export function refPoint(ref: string, ents: Map<string, SketchEntity>): Vec2 | n
   if (!e) return null
   if (p.kind === 'point') return getPoint(e, p.slot)
   if (e.type === 'line') return [(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2]
+  if (e.type === 'text') return e.position
   const mid = e.type === 'arc' ? e.startAngle + ((((e.endAngle - e.startAngle) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)) / 2 : Math.PI / 4
   return [e.center[0] + e.radius * Math.cos(mid), e.center[1] + e.radius * Math.sin(mid)]
 }

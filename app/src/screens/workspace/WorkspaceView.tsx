@@ -19,10 +19,12 @@ import { handleBoxPick, handlePick } from '../../modeling/picking'
 import { usePlaneTool } from '../../modeling/PlaneTool'
 import { useRevolveTool } from '../../modeling/RevolveTool'
 import { useShellTool } from '../../modeling/ShellTool'
+import { useScaleTool } from '../../modeling/ScaleTool'
 import { useTransformTool } from '../../modeling/TransformTool'
 import { SketchLayer } from '../../sketch/SketchLayer'
 import { SketchStatus } from '../../sketch/SketchStatus'
 import { useSketchUi } from '../../sketch/sketchUi'
+import { useTextCard } from '../../sketch/text/TextCard'
 import { useSolverInit } from '../../sketch/useSketchSolve'
 import { endSketch, finishSketch, startSketchOn } from '../../sketch/session'
 import { Button } from '../../ui/Button'
@@ -37,6 +39,7 @@ import type { ViewportMenuItem } from '../../viewport/Viewport'
 import type { ExportOptions } from '../dialogs/ExportDialog'
 import { Workspace } from '../Workspace'
 import { isTypingTarget } from './hooks'
+import { SnapControl } from './SnapControl'
 import { useHistoryEdit } from './useHistoryEdit'
 import { useKernel } from './useKernel'
 import { useToolStore } from './toolStore'
@@ -46,6 +49,7 @@ const THUMBNAIL_DELAY_MS = 3000
 const SUGGESTIONS: Record<'body' | 'plane' | 'edge' | 'region', { id: string; label: string }[]> = {
   body: [
     { id: 'move', label: 'Move' },
+    { id: 'scale', label: 'Scale' },
     { id: 'shell', label: 'Shell' },
     { id: 'mirror', label: 'Mirror' },
     { id: 'pattern', label: 'Pattern' },
@@ -110,6 +114,14 @@ function describe(refs: Ref[]): string {
   return `${names[refs[0].kind]} selected`
 }
 
+const EXPORT_MIME: Record<ExportOptions['format'], string> = {
+  stl: 'model/stl',
+  '3mf': 'model/3mf',
+  step: 'model/step',
+  obj: 'model/obj',
+  glb: 'model/gltf-binary',
+}
+
 function downloadBlob(blob: Blob, filename: string) {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -148,8 +160,10 @@ export function WorkspaceView() {
   const mirror = useMirrorTool(kernel)
   const pattern = usePatternTool(kernel)
   const transform = useTransformTool(kernel, engine)
+  const scale = useScaleTool(kernel)
   const plane = usePlaneTool(kernel, engine)
   const measure = useMeasureTool(kernel, engine)
+  const textCard = useTextCard()
 
   useEffect(() => () => {
     const ts = useToolStore.getState()
@@ -296,6 +310,7 @@ export function WorkspaceView() {
                 : 'solid'
               : activeTool === 'combine' ||
                   activeTool === 'move' ||
+                  activeTool === 'scale' ||
                   ((activeTool === 'extrude' || activeTool === 'revolve' || activeTool === 'loft') &&
                     (draft?.type === 'extrude' || draft?.type === 'revolve' || draft?.type === 'loft') &&
                     draft.params.mode !== 'new')
@@ -425,12 +440,24 @@ export function WorkspaceView() {
       tolerance: high ? 0.01 : 0.1,
       angularTolerance: high ? 0.1 : 0.5,
       binary: opts.binary,
+      bodyNames: Object.fromEntries(ids.map((id) => [id, s.doc.bodies[id]?.name ?? id])),
     })
     if (buffer.byteLength === 0) throw new Error('The export came out empty. Try again.')
     const safe = s.name.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'model'
-    const mime = opts.format === '3mf' ? 'model/3mf' : opts.format === 'step' ? 'model/step' : 'model/stl'
+    const mime = EXPORT_MIME[opts.format]
     downloadBlob(new Blob([buffer], { type: mime }), `${safe}.${opts.format}`)
   }, [])
+
+  const saveImage = useCallback(() => {
+    if (!engine) return
+    const name = useProjectStore.getState().name
+    const safe = name.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'model'
+    engine.captureImage().then(
+      (blob) => downloadBlob(blob, `${safe}.png`),
+      (e: unknown) =>
+        toast({ variant: 'error', title: 'Could not save the image', description: e instanceof Error ? e.message : 'Try again.' }),
+    )
+  }, [engine, toast])
 
   // ---- status ---------------------------------------------------------------------------------------
 
@@ -516,6 +543,7 @@ export function WorkspaceView() {
         </Button>
       ) : null}
       {sketching ? <SketchStatus /> : null}
+      {sketching ? <SnapControl /> : null}
       {suggested.length > 0 ? (
         <div
           role="toolbar"
@@ -546,8 +574,10 @@ export function WorkspaceView() {
     mirror.card ??
     pattern.card ??
     transform.card ??
+    scale.card ??
     plane.card ??
-    measure.card
+    measure.card ??
+    textCard
 
   return (
     <Workspace
@@ -569,7 +599,7 @@ export function WorkspaceView() {
       topBarActions={
         <IconButton label="Zoom to fit" shortcut="F" icon={<Scan size={20} strokeWidth={1.75} />} onClick={() => void fit()} />
       }
-      view={{ engine, onFit: () => void fit() }}
+      view={{ engine, onFit: () => void fit(), onSaveImage: saveImage }}
       onExport={onExport}
     />
   )

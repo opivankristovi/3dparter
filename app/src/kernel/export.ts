@@ -1,4 +1,5 @@
-// File export: STL (binary/ASCII), 3MF (Core 1.x XML in PKZIP), and STEP (ISO-10303-21 via OpenCascade).
+// File export: STL (binary/ASCII), 3MF (Core 1.x XML in PKZIP), STEP (ISO-10303-21 via OpenCascade),
+// Wavefront OBJ (text) and binary glTF 2.0 (GLB).
 import { makeCompound } from 'replicad'
 import type { ExportFormat, ExportOptions } from './api'
 import { safeDelete } from './build'
@@ -209,7 +210,164 @@ ${items.join('\n')}
   ])
 }
 
-/** Dispatches STL, 3MF, or STEP export for the given bodies. */
+/** One body's triangles as the OBJ and GLB writers take them (world mm, Z up). */
+export interface ExportMesh {
+  name: string
+  positions: ArrayLike<number>
+  /** Per-vertex normals, same length as `positions`, or empty when the mesh has none. */
+  normals: ArrayLike<number>
+  indices: ArrayLike<number>
+}
+
+function meshesOf(bodies: BodyRecord[], opts: ExportOptions): ExportMesh[] {
+  return bodies.map((b) => {
+    const m = b.built.shape.mesh({ tolerance: opts.tolerance, angularTolerance: opts.angularTolerance })
+    return {
+      name: opts.bodyNames?.[b.name] ?? b.name,
+      positions: m.vertices,
+      normals: m.normals,
+      indices: m.triangles,
+    }
+  })
+}
+
+/** A name in OBJ is one token: spaces and line breaks would break the file. */
+const objName = (name: string): string => name.replace(/\s+/g, '_') || 'body'
+
+/** Wavefront OBJ, millimetres, one `o` group per body. Face lines use `v//vn` when the mesh has normals. */
+export function objFromMeshes(meshes: ExportMesh[]): string {
+  const lines: string[] = ['# 3DShaper OBJ export', '# Units: millimetres']
+  let offset = 0
+  for (const m of meshes) {
+    const count = Math.floor(m.positions.length / 3)
+    const hasNormals = m.normals.length === m.positions.length && count > 0
+    lines.push(`o ${objName(m.name)}`)
+    for (let i = 0; i < count; i++) {
+      lines.push(`v ${fmtCoord(m.positions[i * 3])} ${fmtCoord(m.positions[i * 3 + 1])} ${fmtCoord(m.positions[i * 3 + 2])}`)
+    }
+    if (hasNormals) {
+      for (let i = 0; i < count; i++) {
+        lines.push(`vn ${fmtCoord(m.normals[i * 3])} ${fmtCoord(m.normals[i * 3 + 1])} ${fmtCoord(m.normals[i * 3 + 2])}`)
+      }
+    }
+    for (let t = 0; t + 2 < m.indices.length; t += 3) {
+      const a = m.indices[t] + 1 + offset
+      const b = m.indices[t + 1] + 1 + offset
+      const c = m.indices[t + 2] + 1 + offset
+      lines.push(hasNormals ? `f ${a}//${a} ${b}//${b} ${c}//${c}` : `f ${a} ${b} ${c}`)
+    }
+    offset += count
+  }
+  return lines.join('\n') + '\n'
+}
+
+/** Exports bodies as Wavefront OBJ text. */
+export async function exportObj(bodies: BodyRecord[], opts: ExportOptions): Promise<ArrayBuffer> {
+  if (bodies.length === 0) throw new Error('There is nothing to export.')
+  const bytes = encoder.encode(objFromMeshes(meshesOf(bodies, opts)))
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+}
+
+const MM_TO_M = 0.001
+const GLB_MAGIC = 0x46546c67 // 'glTF'
+const GLB_JSON = 0x4e4f534a // 'JSON'
+const GLB_BIN = 0x004e4942 // 'BIN' and a zero byte
+
+/**
+ * Binary glTF 2.0: one mesh and node per body, positions in metres, Y up ((x, y, z) in the model becomes
+ * (x, z, -y)), indices uint32, one default material.
+ */
+export function glbFromMeshes(meshes: ExportMesh[]): ArrayBuffer {
+  const views: { offset: number; length: number; target: number }[] = []
+  const accessors: Record<string, unknown>[] = []
+  const meshJson: Record<string, unknown>[] = []
+  const nodes: Record<string, unknown>[] = []
+  const chunks: Uint8Array[] = []
+  let binLength = 0
+  const addView = (data: ArrayBufferView, target: number): number => {
+    const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+    views.push({ offset: binLength, length: bytes.length, target })
+    chunks.push(bytes)
+    binLength += bytes.length // float32 and uint32 data is always a multiple of 4
+    return views.length - 1
+  }
+
+  meshes.forEach((m, mi) => {
+    const count = Math.floor(m.positions.length / 3)
+    const pos = new Float32Array(count * 3)
+    const min = [Infinity, Infinity, Infinity]
+    const max = [-Infinity, -Infinity, -Infinity]
+    for (let i = 0; i < count; i++) {
+      pos[i * 3] = m.positions[i * 3] * MM_TO_M
+      pos[i * 3 + 1] = m.positions[i * 3 + 2] * MM_TO_M
+      pos[i * 3 + 2] = -m.positions[i * 3 + 1] * MM_TO_M
+      for (let k = 0; k < 3; k++) {
+        min[k] = Math.min(min[k], pos[i * 3 + k])
+        max[k] = Math.max(max[k], pos[i * 3 + k])
+      }
+    }
+    const attributes: Record<string, number> = {}
+    accessors.push({ bufferView: addView(pos, 34962), componentType: 5126, count, type: 'VEC3', min, max })
+    attributes.POSITION = accessors.length - 1
+    if (m.normals.length === m.positions.length && count > 0) {
+      const nor = new Float32Array(count * 3)
+      for (let i = 0; i < count; i++) {
+        nor[i * 3] = m.normals[i * 3]
+        nor[i * 3 + 1] = m.normals[i * 3 + 2]
+        nor[i * 3 + 2] = -m.normals[i * 3 + 1]
+      }
+      accessors.push({ bufferView: addView(nor, 34962), componentType: 5126, count, type: 'VEC3' })
+      attributes.NORMAL = accessors.length - 1
+    }
+    const idx = Uint32Array.from(m.indices as ArrayLike<number>)
+    accessors.push({ bufferView: addView(idx, 34963), componentType: 5125, count: idx.length, type: 'SCALAR' })
+    meshJson.push({ name: m.name, primitives: [{ attributes, indices: accessors.length - 1, material: 0, mode: 4 }] })
+    nodes.push({ name: m.name, mesh: mi })
+  })
+
+  const json = {
+    asset: { version: '2.0', generator: '3DShaper' },
+    scene: 0,
+    scenes: [{ nodes: nodes.map((_, i) => i) }],
+    nodes,
+    meshes: meshJson,
+    materials: [
+      { name: 'Default', pbrMetallicRoughness: { baseColorFactor: [0.75, 0.75, 0.78, 1], metallicFactor: 0, roughnessFactor: 0.6 } },
+    ],
+    accessors,
+    bufferViews: views.map((v) => ({ buffer: 0, byteOffset: v.offset, byteLength: v.length, target: v.target })),
+    buffers: [{ byteLength: binLength }],
+  }
+  const jsonBytes = encoder.encode(JSON.stringify(json))
+  const jsonPadded = Math.ceil(jsonBytes.length / 4) * 4
+  const total = 12 + 8 + jsonPadded + 8 + binLength
+  const out = new Uint8Array(total)
+  const view = new DataView(out.buffer)
+  view.setUint32(0, GLB_MAGIC, true)
+  view.setUint32(4, 2, true)
+  view.setUint32(8, total, true)
+  view.setUint32(12, jsonPadded, true)
+  view.setUint32(16, GLB_JSON, true)
+  out.set(jsonBytes, 20)
+  out.fill(0x20, 20 + jsonBytes.length, 20 + jsonPadded) // the JSON chunk is padded with spaces
+  const binStart = 20 + jsonPadded
+  view.setUint32(binStart, binLength, true)
+  view.setUint32(binStart + 4, GLB_BIN, true)
+  let at = binStart + 8
+  for (const c of chunks) {
+    out.set(c, at)
+    at += c.length
+  }
+  return out.buffer
+}
+
+/** Exports bodies as a binary glTF (GLB) file. */
+export async function exportGlb(bodies: BodyRecord[], opts: ExportOptions): Promise<ArrayBuffer> {
+  if (bodies.length === 0) throw new Error('There is nothing to export.')
+  return glbFromMeshes(meshesOf(bodies, opts))
+}
+
+/** Dispatches STL, 3MF, STEP, OBJ or GLB export for the given bodies. */
 export async function exportBodies(format: ExportFormat, bodies: BodyRecord[], opts: ExportOptions): Promise<ArrayBuffer> {
   switch (format) {
     case 'stl':
@@ -218,5 +376,9 @@ export async function exportBodies(format: ExportFormat, bodies: BodyRecord[], o
       return export3mf(bodies, opts)
     case 'step':
       return exportStep(bodies)
+    case 'obj':
+      return exportObj(bodies, opts)
+    case 'glb':
+      return exportGlb(bodies, opts)
   }
 }

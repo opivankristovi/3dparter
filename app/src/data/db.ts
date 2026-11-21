@@ -8,6 +8,8 @@ export interface SettingsRow {
   units: DisplayUnit
   /** Decimal places shown in readouts (0..4). */
   precision: number
+  /** Sketch cursor snaps to the grid. Alt inverts it while held. */
+  gridSnap: boolean
   /** Set once the sample project has been created, so deleting it never re-seeds. */
   seeded?: boolean
 }

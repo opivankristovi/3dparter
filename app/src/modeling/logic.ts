@@ -110,6 +110,7 @@ export function isPreviewable(f: Feature): boolean {
     case 'shell':
       return f.params.body.name !== ''
     case 'transform':
+    case 'scale':
       return f.params.bodies.length > 0
     case 'split':
       return f.params.body.name !== '' && f.params.plane.name !== ''
@@ -145,6 +146,8 @@ export function toolForFeature(type: Feature['type']): string | null {
       return 'combine'
     case 'transform':
       return 'move'
+    case 'scale':
+      return 'scale'
     case 'split':
       return 'split'
     case 'mirror':
@@ -197,6 +200,8 @@ export function cloneForEdit(f: Feature): Feature {
             : null,
         },
       }
+    case 'scale':
+      return { ...f, params: { ...f.params, bodies: [...f.params.bodies] } }
     case 'split':
       return { ...f, params: { body: { ...f.params.body }, plane: { ...f.params.plane } } }
     case 'mirror':
@@ -227,6 +232,7 @@ export function selectionForFeature(f: Feature): Ref[] {
     case 'boolean':
       return combineSelection(f)
     case 'transform':
+    case 'scale':
     case 'mirror':
     case 'pattern':
       return [...f.params.bodies]

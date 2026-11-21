@@ -73,7 +73,7 @@ export function loopEdges(
   const edges: Edge[] = []
   for (const seg of loop.segments) {
     const e = entities.get(seg.id)
-    if (!e) throw new Error('A sketch line this shape used is gone.')
+    if (!e || e.type === 'text') throw new Error('A sketch line this shape used is gone.')
     if (e.type === 'line') {
       edges.push(scope.track(seg.reversed ? makeLine(P(e.b), P(e.a)) : makeLine(P(e.a), P(e.b))))
     } else if (e.type === 'circle') {
@@ -114,6 +114,7 @@ export function buildRegionFace(
 // ---- entity matching ---------------------------------------------------------------------------
 
 function distToEntity(p: Vec2, e: SketchEntity): number {
+  if (e.type === 'text') return Infinity
   if (e.type === 'line') {
     const dx = e.b[0] - e.a[0]
     const dy = e.b[1] - e.a[1]

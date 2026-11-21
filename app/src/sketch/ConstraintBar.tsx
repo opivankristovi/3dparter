@@ -131,7 +131,9 @@ export function ConstraintBar({ engine, frame, sketchId, entities, constraints }
       const all = entities.flatMap((e): Vec2[] =>
         e.type === 'line'
           ? [e.a, e.b]
-          : [
+          : e.type === 'text'
+            ? [e.position]
+            : [
               [e.center[0], e.center[1] - e.radius],
               [e.center[0], e.center[1] + e.radius],
               [e.center[0] - e.radius, e.center[1]],

@@ -9,9 +9,11 @@ import {
   Layers,
   Pill,
   RectangleHorizontal,
+  Scaling,
   Scissors,
   Slash,
   Spline,
+  Type,
   Waypoints,
   Wind,
 } from 'lucide-react'
@@ -39,6 +41,7 @@ export const SKETCH_TOOLS: ToolDef[] = [
   { id: 'sketch.slot', label: 'Slot', icon: <Pill {...i} />, kind: 'sketch' },
   { id: 'sketch.ellipse', label: 'Ellipse', icon: <CircleDashed {...i} />, kind: 'sketch' },
   { id: 'sketch.spline', label: 'Spline', icon: <Waypoints {...i} />, kind: 'sketch' },
+  { id: 'sketch.text', label: 'Text', icon: <Type {...i} />, shortcut: 'I', kind: 'sketch' },
 ]
 export const SOLID_TOOLS: ToolDef[] = [
   { id: 'extrude', label: 'Extrude', icon: <ArrowUpFromLine {...i} />, shortcut: 'E', kind: 'solid' },
@@ -51,6 +54,7 @@ export const SOLID_TOOLS: ToolDef[] = [
   { id: 'combine', label: 'Combine', icon: <CombineIcon {...i} />, shortcut: 'J', kind: 'solid' },
   { id: 'split', label: 'Split', icon: <Scissors {...i} />, kind: 'solid' },
   { id: 'move', label: 'Move', icon: <MoveIcon {...i} />, shortcut: 'M', kind: 'solid' },
+  { id: 'scale', label: 'Scale', icon: <Scaling {...i} />, shortcut: 'W', kind: 'solid' },
   { id: 'mirror', label: 'Mirror', icon: <FlipHorizontal2 {...i} />, kind: 'solid' },
   { id: 'pattern', label: 'Pattern', icon: <Grid2x2 {...i} />, kind: 'solid' },
   { id: 'plane', label: 'Plane', icon: <PlaneIcon {...i} />, shortcut: 'P', kind: 'solid' },

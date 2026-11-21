@@ -11,6 +11,7 @@ import type { OriginPlaneName, PlaneFrame, ProjectDocument, Ref, SketchEntity, V
 import type { MeshData, SketchRegionData } from '../kernel/api'
 import type { EntityState } from '../sketch/solver/defined'
 import { circlePolyline, localToWorld, rayPlane, worldToLocal } from '../sketch/geometry'
+import { textSegments } from '../sketch/text/draw'
 import { buildGroups, faceNameAtTriangle, sortFaces } from './pick'
 import { EDGE_PICK_PX, VERTEX_PICK_PX, edgeHint, edgeSegments, extractVerticesFromEdges, faceHint, nearestOnEdge2D, segIntersectsRect2D } from './hints'
 import type { RefHint } from './hints'
@@ -145,7 +146,8 @@ function segmentsOf(points: Vec3[]): number[] {
 }
 
 /** Entity outline as world-space line segments (flat xyz pairs). */
-export function entitySegments(e: SketchEntity, frame: PlaneFrame): number[] {
+export function entitySegments(e: SketchEntity, frame: PlaneFrame, siblings: SketchEntity[] = []): number[] {
+  if (e.type === 'text') return textSegments(e, frame, siblings)
   if (e.type === 'line') return [...localToWorld(e.a, frame), ...localToWorld(e.b, frame)]
   if (e.type === 'circle') return segmentsOf(circlePolyline(e.center, e.radius).map((p) => localToWorld(p, frame)))
   let end = e.endAngle
@@ -1463,7 +1465,7 @@ export class ViewportEngine {
         else solid.set(mat, [...seg])
       }
       for (const e of g.entities) {
-        const seg = entitySegments(e, g.frame)
+        const seg = entitySegments(e, g.frame, g.entities)
         let kind: 'under' | 'full' | 'conflict' | 'construction' = 'under'
         if (e.construction) {
           dashed.push(...seg)
@@ -1481,7 +1483,7 @@ export class ViewportEngine {
           dotsInto(big, at(e.a))
           dotsInto(big, at(e.b))
           if (!e.construction) dotsInto(this.dotMat(kind, MID_DOT_SIZE), at([(e.a[0] + e.b[0]) / 2, (e.a[1] + e.b[1]) / 2]))
-        } else {
+        } else if (e.type !== 'text') {
           dotsInto(big, at(e.center))
           if (e.type === 'arc') {
             dotsInto(big, at([e.center[0] + e.radius * Math.cos(e.startAngle), e.center[1] + e.radius * Math.sin(e.startAngle)]))
@@ -1511,12 +1513,12 @@ export class ViewportEngine {
   }
 
   /** Hover and selection marks for sketch entities. */
-  setSketchMarks(frame: PlaneFrame | null, hover: SketchEntity[], selected: SketchEntity[]) {
+  setSketchMarks(frame: PlaneFrame | null, hover: SketchEntity[], selected: SketchEntity[], all: SketchEntity[] = []) {
     this.disposeChildren(this.marksGroup)
     if (frame) {
       const add = (ents: SketchEntity[], mat: LineMaterial, order: number) => {
         const seg: number[] = []
-        for (const e of ents) seg.push(...entitySegments(e, frame))
+        for (const e of ents) seg.push(...entitySegments(e, frame, all))
         if (seg.length === 0) return
         const geo = new LineSegmentsGeometry()
         geo.setPositions(seg)
@@ -1634,7 +1636,7 @@ export class ViewportEngine {
     const { tanV, tanH } = this.freeTans()
     const pts: Vec3[] = []
     for (const e of geometry) {
-      const seg = entitySegments(e, frame)
+      const seg = entitySegments(e, frame, geometry)
       for (let i = 0; i + 2 < seg.length; i += 3) pts.push([seg[i], seg[i + 1], seg[i + 2]])
     }
     if (pts.length === 0) {
@@ -1775,6 +1777,26 @@ export class ViewportEngine {
     this.sun.target.position.copy(savedTarget)
     this.renderNow()
     return new Promise((resolve) => out.toBlob((blob) => resolve(blob), 'image/png'))
+  }
+
+  // ---- screenshot -------------------------------------------------------------------------------
+
+  /**
+   * The view as it is now, as a PNG at the canvas size. A frame is drawn and read in the same task, so the
+   * canvas does not need to keep its buffer. Hover and selection marks on edges are left out of the picture.
+   */
+  captureImage(): Promise<Blob> {
+    const hidden = this.edgeMarksGroup.visible
+    this.edgeMarksGroup.visible = false
+    try {
+      this.renderNow()
+      return new Promise((resolve, reject) => {
+        this.canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('The image could not be made. Try again.'))), 'image/png')
+      })
+    } finally {
+      this.edgeMarksGroup.visible = hidden
+      this.requestRender()
+    }
   }
 
   // ---- teardown ---------------------------------------------------------------------------------

@@ -1,7 +1,7 @@
 // Sketch modification operations (M5): trim, corner fillet, sketch mirror, and sketch pattern.
 import { newId } from '../doc/commands'
 import { useProjectStore } from '../doc/store'
-import type { ArcEntity, LineEntity, SketchEntity, Vec2 } from '../doc/types'
+import type { ArcEntity, LineEntity, SketchEntity, TextEntity, Vec2 } from '../doc/types'
 import { arcThroughPoints } from './arc'
 import { addSketchEntities, deleteSketchEntities } from './commands'
 import { getPoint, parseRef, refEntityId } from './solver/refs'
@@ -89,8 +89,8 @@ export function trimSketchEntity(sketchId: string, entityId: string, clickPoint?
   const f = useProjectStore.getState().doc.features.find((x) => x.id === sketchId)
   if (f?.type !== 'sketch') return false
   const target = f.sketch.entities.find((e) => e.id === entityId)
-  if (!target) return false
-  const others = f.sketch.entities.filter((e) => e.id !== entityId)
+  if (!target || target.type === 'text') return false // text is not trimmed
+  const others = f.sketch.entities.filter((e): e is Exclude<SketchEntity, TextEntity> => e.id !== entityId && e.type !== 'text')
 
   if (target.type === 'line') {
     const raw: number[] = []
@@ -407,7 +407,8 @@ export function mirrorSketchSelection(sketchId: string, selectedEntityIds: strin
         center: reflectPoint(e.center, axis.a, axis.b),
         radius: e.radius,
       })
-    } else {
+    } else if (e.type === 'arc') {
+      // Text is not mirrored.
       const sweep = normAngle(e.endAngle - e.startAngle) || TWO_PI
       const pt = (ang: number): Vec2 => [e.center[0] + e.radius * Math.cos(ang), e.center[1] + e.radius * Math.sin(ang)]
       const ra = reflectPoint(pt(e.startAngle), axis.a, axis.b)
@@ -440,6 +441,8 @@ export function patternSketchSelection(sketchId: string, selectedEntityIds: stri
         created.push({ id: newId(), type: 'line', construction: e.construction, a: [e.a[0] + ox, e.a[1] + oy], b: [e.b[0] + ox, e.b[1] + oy] })
       } else if (e.type === 'circle') {
         created.push({ id: newId(), type: 'circle', construction: e.construction, center: [e.center[0] + ox, e.center[1] + oy], radius: e.radius })
+      } else if (e.type === 'text') {
+        created.push({ ...e, id: newId(), position: [e.position[0] + ox, e.position[1] + oy] })
       } else {
         created.push({ ...e, id: newId(), center: [e.center[0] + ox, e.center[1] + oy] })
       }

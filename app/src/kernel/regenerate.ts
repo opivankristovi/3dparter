@@ -32,6 +32,7 @@ import {
   type SketchFeature,
   type SplitFeature,
   type SweepFeature,
+  type ScaleFeature,
   type TransformFeature,
   type Vec3,
 } from '../doc/types'
@@ -43,9 +44,11 @@ import type { Edge, Face } from 'replicad'
 import { dirToLocal, dotVec, faceFrame, localToWorld, subVec, tiltAndOffset, worldToLocal } from './frames'
 import { buildLoft, buildSweep, edgeFromSketchEntity, importStepBody, mirrorBody, splitBody } from './m5Ops'
 import { measureRefs } from './measure'
-import { chamferBody, combine, discard, filletBody, shellBody, transformBody, type BoolOp } from './modify'
+import { chamferBody, combine, discard, filletBody, scaleBody, shellBody, transformBody, type BoolOp } from './modify'
 import { HINT_WARNING, pickSubShapes, resolveBodyRef, resolveSubRef, type Resolved } from './naming'
 import { findRegions, type Region } from './regions'
+import { getLoadedFont } from '../sketch/text/font'
+import { expandText, hasText } from '../sketch/text/outline'
 import { buildRevolution, profilesCrossAxis, type LocalAxis } from './revolve'
 
 export interface SketchRecord {
@@ -139,6 +142,7 @@ function refsOf(f: Feature): Ref[] {
     case 'shell':
       return [f.params.body, ...f.params.removeFaces]
     case 'transform':
+    case 'scale':
       return f.params.bodies
     case 'split':
       return [f.params.body, f.params.plane]
@@ -262,6 +266,8 @@ export class Regenerator {
         const { feature: f, error } = resolveFeature(source, ev)
         const depKeys = dependencies(f).map((d) => next.get(d)?.key ?? 'missing')
         const bodyKeys = readsBodies(f) ? [...state].map(([n, b]) => `${n}:${b.key}`) : []
+        // Text turns into outlines only once the font is there: that changes what a sketch with text builds.
+        if (f.type === 'sketch' && hasText(f.sketch)) depKeys.push(getLoadedFont() ? 'font' : 'nofont')
         const key = featureKey(f, depKeys, bodyKeys)
         const cached = this.records.get(f.id)
         const rec = cached && cached.key === key ? cached : this.evaluate(f, key, { done: next, bodies: state }, error)
@@ -390,6 +396,8 @@ export class Regenerator {
           return this.evalShell(f, key, ctx)
         case 'transform':
           return this.evalTransform(f, key, ctx)
+        case 'scale':
+          return this.evalScale(f, key, ctx)
         case 'split':
           return this.evalSplit(f, key, ctx)
         case 'mirror':
@@ -450,11 +458,13 @@ export class Regenerator {
     }
     const entities = new Map<string, SketchEntity>()
     const lines = new Map<string, LineEntity>()
-    for (const e of f.sketch.entities) {
-      if (e.type === 'line') lines.set(e.id, e)
+    // Text becomes closed loops of line segments ('<textId>~<c>.<k>'), so regions and solids need no special case.
+    const sketch = expandText(f.sketch, getLoadedFont())
+    for (const e of sketch.entities) {
+      if (e.type === 'line' && !e.id.includes('~')) lines.set(e.id, e)
       if (!e.construction) entities.set(e.id, e)
     }
-    const regions = findRegions(f.id, f.sketch)
+    const regions = findRegions(f.id, sketch)
     return {
       key,
       status: { featureId: f.id, ok: true, ...(placed.warning ? { warning: placed.warning } : {}) },
@@ -730,6 +740,39 @@ export class Regenerator {
         const prefix = p.copy ? `${name}/` : ''
         set.push({ name, key, built: transformBody(b.built, { rotate, translate: translate as Vec3 }, prefix) })
       })
+    } catch (err) {
+      for (const b of set) discard(b.built)
+      throw err
+    }
+    return { key, status: { featureId: f.id, ok: true }, set, removed: [] }
+  }
+
+  // ---- scale -----------------------------------------------------------------------------------
+
+  private evalScale(f: ScaleFeature, key: string, ctx: Ctx): FeatureRecord {
+    const p = f.params
+    const fail = (message: string): FeatureRecord => ({ key, status: { featureId: f.id, ok: false, message }, set: [], removed: [] })
+    if (p.bodies.length === 0) return fail('Pick at least one solid to scale.')
+    const factor = Number(p.factor)
+    if (!Number.isFinite(factor) || factor <= 0) return fail('Enter a scale factor greater than 0.')
+    const bodies: BodyRecord[] = []
+    for (const ref of p.bodies) {
+      const b = resolveBodyRef(ref, ctx.bodies)
+      if (!b) return fail(ERR_BODY_GONE)
+      if (!bodies.includes(b)) bodies.push(b)
+    }
+    const set: BodyRecord[] = []
+    try {
+      for (const b of bodies) {
+        let center: Vec3 = [0, 0, 0]
+        if (p.center === 'bodyCenter') {
+          const bb = b.built.shape.boundingBox
+          const [lo, hi] = bb.bounds
+          bb.delete()
+          center = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2]
+        }
+        set.push({ name: b.name, key, built: scaleBody(b.built, factor, center) })
+      }
     } catch (err) {
       for (const b of set) discard(b.built)
       throw err

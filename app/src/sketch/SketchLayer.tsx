@@ -13,6 +13,8 @@ import { TOOL_OF, useDrawTool } from './useDrawTool'
 import type { LiveRefs } from './useDrawTool'
 import { useLiveEntities, useSketchDrawing, useSketchFeature } from './useSketchDrawing'
 import { useSelectDrag } from './useSelectDrag'
+import { useTextUi } from './text/textUi'
+import { TEXT_TOOL, useTextTool } from './text/useTextTool'
 
 export interface SketchLayerProps {
   engine: ViewportEngine
@@ -49,7 +51,10 @@ export function SketchLayer({ engine }: SketchLayerProps) {
   // Selection and drag listeners come first, so their Esc handling runs before the drawing tools'.
   useSelectDrag(engine, live, drawBusy)
   const draw = useDrawTool(engine, live, root)
-  drawBusy.current = draw.busy
+  // Placing or editing text takes the clicks: no selecting or dragging while the Text tool or its card is open.
+  const textBusy = useTextUi((s) => s.session !== null) || activeTool === TEXT_TOOL
+  drawBusy.current = draw.busy || textBusy
+  useTextTool(engine, live)
 
   // Opening or leaving a sketch drops the sketch-only UI state of the previous one.
   useEffect(() => {

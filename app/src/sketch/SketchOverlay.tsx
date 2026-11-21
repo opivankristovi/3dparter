@@ -67,7 +67,7 @@ function sketchCentre(ents: Map<string, SketchEntity>, s: (p: Vec2) => P): P | n
   const pts: P[] = []
   for (const e of ents.values()) {
     if (e.type === 'line') pts.push(s(e.a), s(e.b))
-    else pts.push(s(e.center))
+    else if (e.type !== 'text') pts.push(s(e.center))
   }
   if (pts.length === 0) return null
   return [pts.reduce((a, p) => a + p[0], 0) / pts.length, pts.reduce((a, p) => a + p[1], 0) / pts.length]
@@ -126,7 +126,7 @@ function layoutDimension(c: SketchConstraint, ents: Map<string, SketchEntity>, s
     case 'diameter': {
       const pr = r0 ? parseRef(r0) : null
       const e = pr?.kind === 'entity' ? ents.get(pr.entityId) : undefined
-      if (!e || e.type === 'line') return null
+      if (!e || e.type === 'line' || e.type === 'text') return null
       const centre = s(e.center)
       const rim = s([e.center[0] + e.radius * Math.SQRT1_2, e.center[1] + e.radius * Math.SQRT1_2])
       const out = unit([rim[0] - centre[0], rim[1] - centre[1]])

@@ -31,6 +31,7 @@ export type RefKind =
  *   face          '<extrudeId>/side/<sketchEntityId>'  |  '<extrudeId>/cap:start'  |  '<extrudeId>/cap:end'
  *   edge          '<faceName>|<faceName>' (the two adjacent face names, sorted), plus '#<n>' if several share a pair
  *   sketchRegion  '<sketchId>/region:<sorted entity ids of the outer loop, joined by ",">'
+ *                 a glyph outline of a text entity: '<sketchId>/region:<textId>~<contour>' (short form)
  *   sketchEdge    '<sketchId>/<entityId>'
  * Added in M2:
  *   originAxis         'X' | 'Y' | 'Z'
@@ -39,6 +40,8 @@ export type RefKind =
  *   face (fillet, chamfer)  '<featureId>/blend/<edge name>'
  *   face (shell)       '<shellId>/inner/<original face name>', the rim at an opened face '<shellId>/rim/<name>'
  *   body (transform copy)  '<transformId>:<n>'; its face names get the prefix '<transformId>:<n>/'
+ *   body (scale)  a scaled body keeps its name, and every face and edge keeps its name (scaling keeps the
+ *                 topology), like a transform that is not a copy.
  *   face (boolean with keepTools)  a target face that came from a kept tool: '<booleanId>/<tool face name>'
  *   A face split by a boolean keeps its name plus '#<n>' (stable geometric order). Faces a change
  *   leaves alone keep their names. A ref whose name is gone is matched again by `hint` (with a warning).
@@ -75,7 +78,20 @@ export interface ArcEntity extends EntityBase {
   startAngle: number
   endAngle: number
 }
-export type SketchEntity = LineEntity | CircleEntity | ArcEntity
+/**
+ * Text. Never sent to the solver and never referenced by constraints. The kernel and the region finder
+ * see it as closed line loops (see sketch/text/outline.ts `expandText`), ids '<textId>~<c>.<k>'.
+ */
+export interface TextEntity extends EntityBase {
+  type: 'text'
+  position: Vec2 // baseline start (straight text) in sketch mm
+  text: string
+  size: number // cap height in mm
+  rotation: number // radians, straight text only
+  /** Lay the text along a circle, arc or line of the same sketch. */
+  path?: { entityId: string; offset: number /* 0..1 along the path where the text starts */; side: 'outside' | 'inside' }
+}
+export type SketchEntity = LineEntity | CircleEntity | ArcEntity | TextEntity
 
 /**
  * Sketch constraints. `entityIds` holds REFS, in the order the constraint type expects:
@@ -226,6 +242,15 @@ export interface TransformFeature extends FeatureBase {
 }
 
 /**
+ * Scales bodies uniformly by `factor` (> 0), about the world origin or about each body's own bounding-box centre
+ * (taken when the model is rebuilt). A scaled body keeps its name and all its face and edge names.
+ */
+export interface ScaleFeature extends FeatureBase {
+  type: 'scale'
+  params: { bodies: Ref[]; factor: Expr; center: 'origin' | 'bodyCenter' }
+}
+
+/**
  * A construction plane, offset along the base's normal and optionally tilted by `angle` (degrees) about
  * the base frame's xDir through its origin. `base` is an originPlane, a flat face, or another plane.
  * Referenced as { kind: 'constructionPlane', name: '<featureId>' }.
@@ -282,6 +307,7 @@ export type Feature =
   | ShellFeature
   | BooleanFeature
   | TransformFeature
+  | ScaleFeature
   | SplitFeature
   | MirrorFeature
   | PatternFeature

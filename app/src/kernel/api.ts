@@ -44,7 +44,7 @@ export interface SketchRegionData {
   area: number // mm²
 }
 
-export type ExportFormat = 'stl' | '3mf' | 'step'
+export type ExportFormat = 'stl' | '3mf' | 'step' | 'obj' | 'glb'
 
 export interface ExportOptions {
   /** Chordal tolerance in mm. "high" = 0.01, "low" = 0.1 (see architecture.md). */
@@ -52,6 +52,8 @@ export interface ExportOptions {
   /** Angular tolerance in radians. */
   angularTolerance: number
   binary: boolean
+  /** Display names for the bodies (body id to name), used to label objects in OBJ and GLB files. */
+  bodyNames?: Record<string, string>
 }
 
 export interface MeasureValue {

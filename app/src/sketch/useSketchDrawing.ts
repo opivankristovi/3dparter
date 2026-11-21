@@ -9,6 +9,7 @@ import type { ViewportEngine } from '../viewport/engine'
 import { refsOfSelection } from './pick'
 import { refEntityId } from './solver/refs'
 import { useSketchUi } from './sketchUi'
+import { useFont } from './text/useFont'
 
 function frameOf(f: SketchFeature | undefined, frames: Record<string, PlaneFrame>): PlaneFrame | null {
   if (!f) return null
@@ -42,6 +43,7 @@ export function useSketchDrawing(engine: ViewportEngine, sketchId: string | null
   const hoverRef = useSketchUi((s) => s.hoverRef)
   const hoverConstraintId = useSketchUi((s) => s.hoverConstraintId)
   const selectedConstraintIds = useSketchUi((s) => s.selectedConstraintIds)
+  const font = useFont() // text outlines appear once the font has loaded
 
   useEffect(() => {
     const used = new Set<string>()
@@ -67,7 +69,7 @@ export function useSketchDrawing(engine: ViewportEngine, sketchId: string | null
       ]
     })
     engine.setSketches(groups)
-  }, [engine, features, sketchId, sketchFrames, preview, defined])
+  }, [engine, features, sketchId, sketchFrames, preview, defined, font])
 
   useEffect(() => {
     const sk = features.find((f): f is SketchFeature => f.id === sketchId && f.type === 'sketch')
@@ -93,8 +95,8 @@ export function useSketchDrawing(engine: ViewportEngine, sketchId: string | null
     for (const r of cons(hoverConstraintId)?.entityIds ?? []) if (refEntityId(r)) hover.add(refEntityId(r) as string)
     if (hoverRef && !tool) addRefs(hover, [hoverRef])
     const pick = (ids: Set<string>) => [...ids].flatMap((i) => byId.get(i) ?? [])
-    engine.setSketchMarks(fr, pick(hover), pick(selected))
-  }, [engine, features, sketchId, sketchFrames, tool, selection, preview, hoverRef, hoverConstraintId, selectedConstraintIds])
+    engine.setSketchMarks(fr, pick(hover), pick(selected), ents)
+  }, [engine, features, sketchId, sketchFrames, tool, selection, preview, hoverRef, hoverConstraintId, selectedConstraintIds, font])
 
   useEffect(
     () => () => {

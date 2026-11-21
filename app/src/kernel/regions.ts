@@ -26,7 +26,7 @@ export interface Loop {
 }
 
 export interface Region {
-  /** '<sketchId>/region:<sorted entity ids of the outer loop joined by ",">' */
+  /** '<sketchId>/region:<sorted entity ids of the outer loop joined by ",">', or '<sketchId>/region:<textId>~<c>' for a glyph */
   name: string
   outer: Loop
   holes: Loop[]
@@ -186,7 +186,7 @@ function fullArcLoop(a: ArcEntity): Loop {
 /** Closed loops of the sketch's real (non-construction) geometry, counter-clockwise. */
 export function findLoops(sketch: Sketch): Loop[] {
   const entities = new Map<string, SketchEntity>()
-  for (const e of sketch.entities) if (!e.construction) entities.set(e.id, e)
+  for (const e of sketch.entities) if (!e.construction && e.type !== 'text') entities.set(e.id, e)  // text is expanded to lines first
 
   const loops: Loop[] = []
   const nodes: Vec2[] = []
@@ -209,7 +209,7 @@ export function findLoops(sketch: Sketch): Loop[] {
         continue
       }
       edges.push({ entity: e, from: nodeOf(arcPoint(e, e.startAngle)), to: nodeOf(arcPoint(e, e.endAngle)) })
-    } else {
+    } else if (e.type === 'line') {
       const from = nodeOf(e.a)
       const to = nodeOf(e.b)
       if (from !== to) edges.push({ entity: e, from, to })
@@ -277,6 +277,17 @@ export function findLoops(sketch: Sketch): Loop[] {
   return loops
 }
 
+/** '<textId>~<c>' when every id is a segment of the same text contour ('<textId>~<c>.<k>'), else null. */
+function glyphName(ids: string[]): string | null {
+  let key: string | null = null
+  for (const id of ids) {
+    const m = /^(.+~\d+)\.\d+$/.exec(id)
+    if (!m || (key !== null && m[1] !== key)) return null
+    key = m[1]
+  }
+  return key
+}
+
 /** Closed regions of a sketch: each outer loop with its direct holes. */
 export function findRegions(sketchId: string, sketch: Sketch): Region[] {
   const loops = findLoops(sketch)
@@ -299,7 +310,7 @@ export function findRegions(sketchId: string, sketch: Sketch): Region[] {
     })
     const ids = loop.segments.map((s) => s.id).sort()
     regions.push({
-      name: `${sketchId}/region:${ids.join(',')}`,
+      name: `${sketchId}/region:${glyphName(ids) ?? ids.join(',')}`,
       outer: loop,
       holes,
       area: loop.area - holes.reduce((s, h) => s + h.area, 0),

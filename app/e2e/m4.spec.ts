@@ -74,7 +74,7 @@ function parse3mfTriangles(xml: string): { objects: number; triangles: number; v
 
 async function downloadExport(
   page: Page,
-  format: 'STL' | '3MF' | 'STEP',
+  format: 'STL' | '3MF' | 'STEP' | 'OBJ' | 'GLB (glTF)',
   solids?: 'Selected' | 'All visible',
 ): Promise<{ filename: string; buffer: Buffer }> {
   await page.getByRole('button', { name: 'Export', exact: true }).click()
@@ -190,6 +190,27 @@ test.describe('M4 Workspace and I/O', () => {
     const stepText = step.buffer.toString('utf8')
     expect(stepText).toContain('ISO-10303-21;')
     expect(stepText).toContain('END-ISO-10303-21;')
+
+    // OBJ: text, one object per solid, 12 triangles each, 1-based faces with normals.
+    const obj = await downloadExport(page, 'OBJ', 'All visible')
+    expect(obj.filename).toMatch(/\.obj$/)
+    const objLines = obj.buffer.toString('utf8').split('\n')
+    expect(objLines.filter((l) => l.startsWith('o ')).sort()).toEqual(['o Body_1', 'o Body_2'])
+    expect(objLines.filter((l) => l.startsWith('f ')).length).toBe(24)
+    expect(objLines.filter((l) => l.startsWith('v ')).length).toBe(objLines.filter((l) => l.startsWith('vn ')).length)
+
+    // GLB: binary glTF 2.0 with two meshes, positions in metres.
+    const glb = await downloadExport(page, 'GLB (glTF)', 'Selected')
+    expect(glb.filename).toMatch(/\.glb$/)
+    expect(glb.buffer.toString('ascii', 0, 4)).toBe('glTF')
+    expect(glb.buffer.readUInt32LE(4)).toBe(2)
+    expect(glb.buffer.readUInt32LE(8)).toBe(glb.buffer.length)
+    const jsonLen = glb.buffer.readUInt32LE(12)
+    const gltf = JSON.parse(glb.buffer.toString('utf8', 20, 20 + jsonLen))
+    expect(gltf.meshes).toHaveLength(1)
+    expect(gltf.nodes[0].name).toBe('Body 2')
+    const pos = gltf.accessors[gltf.meshes[0].primitives[0].attributes.POSITION]
+    expect(pos.max[0] - pos.min[0]).toBeCloseTo(0.02, 4) // the 20 mm box, in metres
   })
 
   test('M4-H1 Box selection (enclosed vs crossing) and 3D vertex picking', async ({ page }) => {

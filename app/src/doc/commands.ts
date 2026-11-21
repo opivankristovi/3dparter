@@ -21,6 +21,7 @@ const TYPE_LABEL: Record<Feature['type'], string> = {
   shell: 'Shell',
   boolean: 'Combine',
   transform: 'Move',
+  scale: 'Scale',
   split: 'Split',
   mirror: 'Mirror',
   pattern: 'Pattern',

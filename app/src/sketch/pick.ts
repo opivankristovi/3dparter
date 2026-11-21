@@ -61,7 +61,7 @@ function kindOf(ref: string, sketch: Sketch): Kind | null {
   if (!p) return null
   if (p.kind === 'reserved') return p.name === 'origin' ? 'P' : 'L'
   const e = sketch.entities.find((x) => x.id === p.entityId)
-  if (!e) return null
+  if (!e || e.type === 'text') return null
   if (p.kind === 'point') return 'P'
   return e.type === 'line' ? 'L' : e.type === 'circle' ? 'C' : 'A'
 }
