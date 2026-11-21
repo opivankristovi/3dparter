@@ -1,11 +1,11 @@
-// Reads replica/design/tokens*.json and writes src/styles/tokens.css.
+// Reads app/design/tokens*.json (moved from replica/design so the app builds on its own) and writes src/styles/tokens.css.
 // Rerun after a rebrand: `npm run tokens` (also runs in predev / prebuild).
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
-const designDir = resolve(here, '../../replica/design')
+const designDir = resolve(here, '../design')
 const outFile = resolve(here, '../src/styles/tokens.css')
 
 const light = JSON.parse(readFileSync(resolve(designDir, 'tokens.json'), 'utf8'))
@@ -44,7 +44,7 @@ for (const [k, v] of Object.entries(light.layout)) {
   }
 }
 
-const css = `/* GENERATED from replica/design/tokens*.json — do not edit. Run \`npm run tokens\`. */
+const css = `/* GENERATED from app/design/tokens*.json — do not edit. Run \`npm run tokens\`. */
 
 :root,
 [data-theme="light"] {

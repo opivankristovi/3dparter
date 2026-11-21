@@ -10,7 +10,7 @@ const pub = join(root, 'public')
 const launchAssets = join(root, '..', 'replica', 'launch', 'assets')
 mkdirSync(launchAssets, { recursive: true })
 
-// Deep Teal palette (replica/design/tokens*.json).
+// Deep Teal palette (app/design/tokens*.json).
 const C = { deep: '#0b6e69', deeper: '#085552', mint: '#2dd4bf', pale: '#e2f5f3', white: '#ffffff', ink: '#071f1e' }
 
 /** The prism, drawn on a 512 grid around (256,256). `s` scales the mark about the centre. */
