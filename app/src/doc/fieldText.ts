@@ -31,7 +31,7 @@ export function fieldTextToExpr(text: string, displayUnit: DisplayUnit, kind: Fi
     const expr = toExpr(mm)
     return { ok: true, expr, value: Number(expr) }
   }
-  const r = evalExpr(t, scope ?? scopeOf(useProjectStore.getState().doc))
+  const r = evalExpr(t, scope ?? scopeOf(useProjectStore.getState().doc), kind)
   return r.ok ? { ok: true, expr: t, value: r.value } : { ok: false, message: r.message }
 }
 

@@ -62,7 +62,7 @@ function toWorld(frame: PlaneFrame, shift: number, p: Vec2): Vec3 {
   ]
 }
 
-function loopEdges(
+export function loopEdges(
   loop: Loop,
   entities: Map<string, SketchEntity>,
   frame: PlaneFrame,
@@ -170,6 +170,8 @@ export interface ExtrudeInput {
   distance: number
   /** 1 along the plane normal, -1 against it, 0 symmetric */
   direction: 1 | -1 | 0
+  /** Shift along `frame.normal` before extruding (mm). */
+  startOffset?: number
 }
 
 export function groupByName<T extends { name: string }>(items: T[]): T[][] {
@@ -248,12 +250,12 @@ export function assignNames(
 
 export function buildExtrusion(input: ExtrudeInput): BuiltBody {
   const oc = getOC()
-  const { extrudeId, regions, entities, frame, distance, direction } = input
+  const { extrudeId, regions, entities, frame, distance, direction, startOffset = 0 } = input
   const scope = new Scope()
   const solids: AnyShape[] = []
   let result: AnyShape | null = null
   try {
-    const shift = direction === 0 ? -distance / 2 : 0
+    const shift = startOffset + (direction === 0 ? -distance / 2 : 0)
     const sign = direction === -1 ? -1 : 1
     const n = frame.normal
     const vec = scope.track(new oc.gp_Vec(n[0] * distance * sign, n[1] * distance * sign, n[2] * distance * sign))

@@ -354,6 +354,9 @@ test.describe('History: a long list and a phone', () => {
     await button.click()
     await page.getByRole('menuitem', { name: /Move up/ }).click()
     await expect.poll(() => names(page)).toEqual(['Sketch 3', 'Sketch 1', 'Sketch 4', 'Sketch 2'])
+    // The closing menu hands focus back to its button; wait for that before focusing anything else.
+    await expect(page.getByRole('menu')).toHaveCount(0)
+    await expect(button).toBeFocused()
 
     // The marker: a finger on the bar moves it; the button shows every step again.
     await marker(page).focus()

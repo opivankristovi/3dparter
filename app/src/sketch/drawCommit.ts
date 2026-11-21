@@ -4,7 +4,7 @@ import { newId } from '../doc/commands'
 import type { SketchConstraint } from '../doc/types'
 import { addSketchEntities } from './commands'
 import type { Built } from './shapes'
-import { inferConstraints } from './solver/infer'
+import { connectInternalEndpoints, inferConstraints } from './solver/infer'
 import { currentSketch } from './actions'
 
 export interface CommitOptions {
@@ -26,11 +26,9 @@ export function commitBuilt(sketchId: string, built: Built, opts: CommitOptions)
   if (opts.auto) geometric = inferConstraints(built.entities, sketch.sketch.entities, { tolMm: 1e-6, kind: built.kind })
   else {
     // Without automatic constraints only the joins inside one shape are kept, so a shape stays closed.
-    geometric = []
+    geometric = built.entities.length > 1 ? connectInternalEndpoints(built.entities) : []
     const es = built.entities
-    if (built.kind === 'rectangle') {
-      es.forEach((e, i) => geometric.push(coincident(`${e.id}.b`, `${es[(i + 1) % es.length].id}.a`)))
-    } else if (built.kind === 'line') {
+    if (built.kind === 'line') {
       if (opts.prevLine) geometric.push(coincident(`${opts.prevLine}.b`, `${es[0].id}.a`))
       if (opts.closeOn) geometric.push(coincident(`${es[0].id}.b`, `${opts.closeOn}.a`))
     }

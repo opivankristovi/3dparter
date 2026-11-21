@@ -117,8 +117,10 @@ function tokenize(text: string): Tok[] {
 
 // ---- parser ------------------------------------------------------------------------------------
 
+export type UnitKind = 'length' | 'angle'
+
 export type Node =
-  | { k: 'num'; value: number }
+  | { k: 'num'; value: number; unit?: string | null }
   | { k: 'name'; name: string; pos: number }
   | { k: 'neg'; a: Node }
   | { k: 'bin'; op: '+' | '-' | '*' | '/' | '^'; a: Node; b: Node }
@@ -215,7 +217,7 @@ class Parser {
     if (t.t === 'bad') throw new Fail(t.message)
     if (t.t === 'num') {
       this.i++
-      return { k: 'num', value: t.value * (t.unit ? UNITS[t.unit] : 1) }
+      return { k: 'num', value: t.value * (t.unit ? UNITS[t.unit] : 1), unit: t.unit }
     }
     if (t.t === 'name') {
       this.i++
@@ -256,6 +258,55 @@ export function parseExpr(text: string): ParseResult {
 }
 
 // ---- evaluator ---------------------------------------------------------------------------------
+
+const TRIG_IN = new Set(['sin', 'cos', 'tan'])
+const TRIG_OUT = new Set(['asin', 'acos', 'atan'])
+const unitKindOf = (u: string): UnitKind => (u === 'deg' ? 'angle' : 'length')
+
+function checkUnits(n: Node, expected?: UnitKind): UnitKind | null {
+  switch (n.k) {
+    case 'num': {
+      if (!n.unit) return null
+      const k = unitKindOf(n.unit)
+      if (expected && k !== expected) {
+        throw new Fail(
+          k === 'angle'
+            ? 'deg is an angle unit. Enter a length.'
+            : `${n.unit} is a length unit. Enter an angle.`,
+        )
+      }
+      return k
+    }
+    case 'name':
+      return null
+    case 'neg':
+      return checkUnits(n.a, expected)
+    case 'bin': {
+      const a = checkUnits(n.a, expected)
+      const b = checkUnits(n.b, expected)
+      if (a && b && a !== b) throw new Fail('Cannot mix length and angle units.')
+      return a ?? b
+    }
+    case 'call': {
+      if (TRIG_IN.has(n.name)) {
+        for (const arg of n.args) checkUnits(arg, 'angle')
+        return null
+      }
+      if (TRIG_OUT.has(n.name)) {
+        for (const arg of n.args) checkUnits(arg)
+        if (expected === 'length') throw new Fail(`${n.name} gives an angle. Enter a length.`)
+        return 'angle'
+      }
+      let found: UnitKind | null = null
+      for (const arg of n.args) {
+        const k = checkUnits(arg, expected)
+        if (k && found && k !== found) throw new Fail('Cannot mix length and angle units.')
+        found ??= k
+      }
+      return found
+    }
+  }
+}
 
 function run(n: Node, scope: Scope): number {
   switch (n.k) {
@@ -312,10 +363,11 @@ function run(n: Node, scope: Scope): number {
  * Evaluates `text` with the variable values in `scope` (name -> number, mm or degrees).
  * Never throws; a problem comes back as a short message ending with a period.
  */
-export function evalExpr(text: string, scope: Scope): EvalResult {
+export function evalExpr(text: string, scope: Scope, kind?: UnitKind): EvalResult {
   const p = parseExpr(text)
   if (!p.ok) return p
   try {
+    checkUnits(p.ast, kind)
     const value = run(p.ast, scope)
     if (!Number.isFinite(value)) return { ok: false, message: 'The result is not a number.' }
     return { ok: true, value }

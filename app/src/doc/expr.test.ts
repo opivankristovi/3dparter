@@ -89,6 +89,18 @@ describe('units', () => {
   it('says where a unit does not belong', () => {
     expect(err('w mm', { w: 1 })).toMatch(/unit/i)
   })
+  it('refuses mixing length and angle units, but allows trig with angle inside a length expression', () => {
+    expect(err('10 mm + 45 deg')).toMatch(/mix/i)
+    expect(evalExpr('10 mm * sin(45 deg)', scope(), 'length')).toMatchObject({ ok: true })
+    const lenRes = evalExpr('10 mm * sin(45 deg)', scope(), 'length')
+    expect(lenRes.ok && lenRes.value).toBeCloseTo(10 * Math.SQRT1_2, 10)
+    const r1 = evalExpr('45 deg', scope(), 'length')
+    expect(r1.ok).toBe(false)
+    if (!r1.ok) expect(r1.message.endsWith('.')).toBe(true)
+    const r2 = evalExpr('5 in', scope(), 'angle')
+    expect(r2.ok).toBe(false)
+    if (!r2.ok) expect(r2.message.endsWith('.')).toBe(true)
+  })
 })
 
 describe('errors', () => {

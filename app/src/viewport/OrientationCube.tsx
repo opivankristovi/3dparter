@@ -1,9 +1,11 @@
 // A small cube that shows which way the camera looks. Its faces are buttons: each flies the camera to that view.
 // Drawn with CSS 3D transforms and re-posed after every rendered frame, so it follows orbiting and fly-to moves.
 import { useEffect, useMemo, useRef } from 'react'
+import { RotateCcw, RotateCw } from 'lucide-react'
 import * as THREE from 'three'
 import type { Vec3 } from '../doc/types'
 import { layoutPx } from '../ui/layout'
+import { cn } from '../ui/cn'
 import type { ViewportEngine } from './engine'
 
 interface FaceDef {
@@ -63,31 +65,56 @@ export function OrientationCube({ engine }: OrientationCubeProps) {
     return engine.onFrame(pose)
   }, [engine])
 
+  const rollBtn =
+    'flex size-6 cursor-pointer items-center justify-center rounded-sm text-text-muted transition-colors duration-(--motion-fast) enabled:hover:bg-surface-sunken enabled:hover:text-text focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-focus disabled:cursor-not-allowed disabled:text-text-disabled'
+
   return (
-    <div
-      role="group"
-      aria-label="View orientation"
-      className="relative size-(--layout-viewcol-w)"
-      style={{ perspective: 'calc(var(--layout-viewcube-size) * 6)' }}
-    >
+    <div role="group" aria-label="View orientation" className="flex flex-col items-center">
       <div
-        ref={cube}
-        className="absolute top-1/2 left-1/2 size-0 [transform-origin:0_0] [transform-style:preserve-3d]"
-        style={{ transform: 'matrix3d(1,0,0,0,0,-1,0,0,0,0,1,0,0,0,0,1)' }}
+        className="relative size-(--layout-viewcol-w)"
+        style={{ perspective: 'calc(var(--layout-viewcube-size) * 6)' }}
       >
-        {FACES.map((f) => (
-          <button
-            key={f.label}
-            type="button"
-            aria-label={f.name}
-            disabled={!engine}
-            onClick={() => engine?.viewFrom(f.normal)}
-            style={{ transform: faceMatrix(f, size) }}
-            className="absolute top-0 left-0 size-(--layout-viewcube-size) cursor-pointer border border-border bg-surface-raised text-xs text-text transition-colors duration-(--motion-fast) [backface-visibility:hidden] [transform-origin:0_0] enabled:hover:bg-accent-subtle enabled:hover:text-accent disabled:cursor-not-allowed disabled:text-text-disabled"
-          >
-            {f.label}
-          </button>
-        ))}
+        <div
+          ref={cube}
+          className="absolute top-1/2 left-1/2 size-0 [transform-origin:0_0] [transform-style:preserve-3d]"
+          style={{ transform: 'matrix3d(1,0,0,0,0,-1,0,0,0,0,1,0,0,0,0,1)' }}
+        >
+          {FACES.map((f) => (
+            <button
+              key={f.label}
+              type="button"
+              aria-label={f.name}
+              disabled={!engine}
+              onClick={() => engine?.viewFrom(f.normal)}
+              style={{ transform: faceMatrix(f, size) }}
+              className="absolute top-0 left-0 size-(--layout-viewcube-size) cursor-pointer border border-border bg-surface-raised text-xs text-text transition-colors duration-(--motion-fast) [backface-visibility:hidden] [transform-origin:0_0] enabled:hover:bg-accent-subtle enabled:hover:text-accent disabled:cursor-not-allowed disabled:text-text-disabled"
+            >
+              {f.label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="flex items-center justify-center gap-1 pb-1">
+        <button
+          type="button"
+          aria-label="Rotate view 90° left"
+          title="Rotate view 90° left"
+          disabled={!engine}
+          onClick={() => engine?.rollView(-90)}
+          className={cn(rollBtn)}
+        >
+          <RotateCcw size={14} strokeWidth={1.75} />
+        </button>
+        <button
+          type="button"
+          aria-label="Rotate view 90° right"
+          title="Rotate view 90° right"
+          disabled={!engine}
+          onClick={() => engine?.rollView(90)}
+          className={cn(rollBtn)}
+        >
+          <RotateCw size={14} strokeWidth={1.75} />
+        </button>
       </div>
     </div>
   )

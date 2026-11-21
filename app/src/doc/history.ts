@@ -30,6 +30,10 @@ function refUses(f: Feature): RefUse[] {
       return [...piece(f.params.profiles), ...whole(f.params.targets)]
     case 'revolve':
       return [...piece(f.params.profiles), ...piece([f.params.axis]), ...whole(f.params.targets)]
+    case 'sweep':
+      return [...piece([f.params.profile, f.params.path]), ...whole(f.params.targets)]
+    case 'loft':
+      return [...piece(f.params.profiles), ...whole(f.params.targets)]
     case 'fillet':
     case 'chamfer':
       return piece(f.params.edges)
@@ -39,8 +43,16 @@ function refUses(f: Feature): RefUse[] {
       return whole([f.params.target, ...f.params.tools])
     case 'transform':
       return whole(f.params.bodies)
+    case 'split':
+      return [...whole([f.params.body]), ...piece([f.params.plane])]
+    case 'mirror':
+      return [...whole(f.params.bodies), ...piece([f.params.plane])]
+    case 'pattern':
+      return [...whole(f.params.bodies), ...piece([f.params.axis])]
     case 'plane':
       return piece([f.params.base])
+    case 'import':
+      return []
   }
 }
 
@@ -110,7 +122,9 @@ export function featureDeps(doc: ProjectDocument): Map<string, string[]> {
     }
     switch (f.type) {
       case 'extrude':
-      case 'revolve': {
+      case 'revolve':
+      case 'sweep':
+      case 'loft': {
         if (f.params.mode === 'new') {
           changers.set(f.id, [i])
           owners.set(f.id, new Set([f.id]))
@@ -119,6 +133,11 @@ export function featureDeps(doc: ProjectDocument): Map<string, string[]> {
           touch(targets, i)
           owners.set(f.id, targets)
         }
+        break
+      }
+      case 'import': {
+        changers.set(f.id, [i])
+        owners.set(f.id, new Set([f.id]))
         break
       }
       case 'boolean': {
@@ -145,16 +164,40 @@ export function featureDeps(doc: ProjectDocument): Map<string, string[]> {
         owners.set(f.id, bodies)
         break
       }
-      case 'transform': {
+      case 'transform':
+      case 'mirror': {
         const bodies = union(f.params.bodies)
         touch(bodies, i)
         owners.set(f.id, bodies)
-        if (f.params.copy) {
+        const copy = f.type === 'transform' ? f.params.copy : !f.params.merge
+        if (copy) {
           for (let n = 1; n <= f.params.bodies.length; n++) {
             const key = `${f.id}:${n}`
             changers.set(key, [i])
             owners.set(key, new Set([key]))
           }
+        }
+        break
+      }
+      case 'split': {
+        const bodies = union([f.params.body])
+        touch(bodies, i)
+        owners.set(f.id, bodies)
+        const key = `${f.id}:1`
+        changers.set(key, [i])
+        owners.set(key, new Set([key]))
+        break
+      }
+      case 'pattern': {
+        const bodies = union(f.params.bodies)
+        touch(bodies, i)
+        owners.set(f.id, bodies)
+        const count = Math.max(2, Math.min(50, Math.round(Number(f.params.count) || 2)))
+        const total = (count - 1) * f.params.bodies.length
+        for (let n = 1; n <= total; n++) {
+          const key = `${f.id}:${n}`
+          changers.set(key, [i])
+          owners.set(key, new Set([key]))
         }
         break
       }

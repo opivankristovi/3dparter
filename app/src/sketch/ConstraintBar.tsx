@@ -3,17 +3,26 @@
 // automatic constraints off lives next to it.
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Ruler, MoveHorizontal, MoveVertical, Spline, Shapes } from 'lucide-react'
+import { FlipHorizontal2, LayoutGrid, MoveHorizontal, MoveVertical, Ruler, Scissors, Shapes, Spline } from 'lucide-react'
 import { useProjectStore } from '../doc/store'
 import type { ConstraintType, PlaneFrame, SketchConstraint, SketchEntity, Vec2 } from '../doc/types'
 import { useBreakpoints } from '../screens/workspace/hooks'
 import { ConstraintGlyph } from '../ui/ConstraintGlyph'
 import type { ConstraintKind } from '../ui/ConstraintGlyph'
 import { IconButton } from '../ui/IconButton'
+import { FilletIcon } from '../ui/ModelIcons'
 import { Switch } from '../ui/Switch'
 import { Toolbar, ToolbarSeparator } from '../ui/Toolbar'
 import type { ViewportEngine } from '../viewport/engine'
-import { applyConstraint, setAutoConstraints, toggleConstructionOfSelection } from './actions'
+import {
+  applyConstraint,
+  filletCornerSelection,
+  mirrorSketchSelected,
+  patternSketchSelected,
+  setAutoConstraints,
+  toggleConstructionOfSelection,
+  trimSelection,
+} from './actions'
 import { CONSTRAINT_KEYS, CONSTRAINT_NAMES } from './dimensions'
 import { localToWorld } from './geometry'
 import { dimensionFor, refsOfSelection, wholeEntityIds } from './pick'
@@ -89,8 +98,11 @@ export function ConstraintBar({ engine, frame, sketchId, entities, constraints }
   const types = applicableConstraints(refs, sketch)
   const natural = dimensionFor(refs, sketch)
   const wholeIds = wholeEntityIds(refs)
+  const lineCount = wholeIds.filter((id) => entities.find((e) => e.id === id)?.type === 'line').length
+  const canFilletCorner = lineCount === 2 || (refs.length === 1 && refs[0].includes('.'))
+  const canMirror = wholeIds.length >= 2 && lineCount >= 1
   const allConstruction = wholeIds.length > 0 && wholeIds.every((id) => entities.find((e) => e.id === id)?.construction)
-  const hasItems = types.length > 0 || wholeIds.length > 0
+  const hasItems = types.length > 0 || wholeIds.length > 0 || canFilletCorner
 
   useLayoutEffect(() => {
     const w = bar.current?.offsetWidth ?? 0
@@ -170,16 +182,28 @@ export function ConstraintBar({ engine, frame, sketchId, entities, constraints }
                   onClick={() => applyConstraint(t)}
                 />
               ))}
-              {wholeIds.length > 0 ? (
+              {wholeIds.length > 0 || canFilletCorner ? (
                 <>
                   {types.length > 0 ? <ToolbarSeparator /> : null}
-                  <IconButton
-                    label="Construction"
-                    shortcut="X"
-                    pressed={allConstruction}
-                    icon={<Shapes {...ic} />}
-                    onClick={toggleConstructionOfSelection}
-                  />
+                  {wholeIds.length > 0 ? (
+                    <>
+                      <IconButton
+                        label="Construction"
+                        shortcut="X"
+                        pressed={allConstruction}
+                        icon={<Shapes {...ic} />}
+                        onClick={toggleConstructionOfSelection}
+                      />
+                      <IconButton label="Trim" shortcut="T" icon={<Scissors {...ic} />} onClick={trimSelection} />
+                      <IconButton label="Pattern sketch" icon={<LayoutGrid {...ic} />} onClick={patternSketchSelected} />
+                    </>
+                  ) : null}
+                  {canFilletCorner ? (
+                    <IconButton label="Fillet corner" icon={<FilletIcon {...ic} />} onClick={() => filletCornerSelection()} />
+                  ) : null}
+                  {canMirror ? (
+                    <IconButton label="Mirror sketch" icon={<FlipHorizontal2 {...ic} />} onClick={mirrorSketchSelected} />
+                  ) : null}
                 </>
               ) : null}
             </Toolbar>

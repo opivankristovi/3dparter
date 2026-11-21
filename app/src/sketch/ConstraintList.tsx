@@ -1,6 +1,7 @@
 // The open sketch's constraints as a plain list in the side panel: reachable by keyboard and screen reader,
 // each with a delete button. Choosing one selects it and lights up its geometry in the viewport.
 import { X } from 'lucide-react'
+import { useSettings } from '../app/useSettings'
 import { useProjectStore } from '../doc/store'
 import type { Sketch, SketchConstraint, SketchFeature } from '../doc/types'
 import { scopeOf } from '../doc/variables'
@@ -31,11 +32,11 @@ function describeRef(ref: string, sketch: Sketch): string {
   return `${slot} of ${name}`
 }
 
-function summary(c: SketchConstraint, sketch: Sketch, units: Parameters<typeof labelText>[2]): string {
+function summary(c: SketchConstraint, sketch: Sketch, units: Parameters<typeof labelText>[2], digits: number): string {
   const what = c.entityIds.map((r) => describeRef(r, sketch)).join(', ')
   if (!isDimensional(c.type)) return what
   const v = c.driving ? evalValue(c.value, scopeOf(useProjectStore.getState().doc)) : (measureConstraint(sketch, c) ?? NaN)
-  const text = Number.isFinite(v) ? dimensionLabel(c.type, c.driving ? c.value : undefined, v, units) : ''
+  const text = Number.isFinite(v) ? dimensionLabel(c.type, c.driving ? c.value : undefined, v, units, digits) : ''
   return `${c.driving ? text : `(${text})`} · ${what}`
 }
 
@@ -43,6 +44,7 @@ export function ConstraintList() {
   const sketchId = useToolStore((s) => s.activeSketchId)
   const features = useProjectStore((s) => s.doc.features)
   const units = useProjectStore((s) => s.doc.units)
+  const precision = useSettings((s) => s.settings.precision)
   const selected = useSketchUi((s) => s.selectedConstraintIds)
   const defined = useSketchUi((s) => s.defined)
   const conflicts = defined?.conflicting ?? NONE
@@ -75,7 +77,7 @@ export function ConstraintList() {
                 )}
               >
                 <span className="font-medium">{CONSTRAINT_NAMES[c.type]}</span>
-                <span className="block truncate text-text-muted">{summary(c, feature.sketch, units)}</span>
+                <span className="block truncate text-text-muted">{summary(c, feature.sketch, units, precision)}</span>
               </button>
               <IconButton
                 label={`Delete ${CONSTRAINT_NAMES[c.type].toLowerCase()} constraint`}

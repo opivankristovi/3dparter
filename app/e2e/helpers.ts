@@ -218,8 +218,8 @@ export async function pickTopPlaneAgain(page: Page) {
   await waitCameraStable(page)
 }
 
-/** Clicks a screen point near `world` where `engine.pickAt` returns the wanted kind (edge, face or body). */
-export async function clickPickableNear(page: Page, world: World, kind: 'edge' | 'face' | 'body') {
+/** Clicks a screen point near `world` where `engine.pickAt` returns the wanted kind (edge, face, body or vertex). */
+export async function clickPickableNear(page: Page, world: World, kind: 'edge' | 'face' | 'body' | 'vertex') {
   let pt: [number, number] | null = null
   await expect
     .poll(async () => {

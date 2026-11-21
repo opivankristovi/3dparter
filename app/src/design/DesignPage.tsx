@@ -265,7 +265,7 @@ export function DesignPage() {
       <ToastProvider>
         <div className="mx-auto max-w-[1100px] px-4 pb-24">
           <header className="sticky top-0 z-30 -mx-4 flex flex-wrap items-center gap-4 border-b border-border bg-bg px-4 py-3">
-            <h1 className="flex-1 text-xl">3DShaper design system</h1>
+            <h1 className="flex-1 text-xl">3DParter design system</h1>
             <SegmentedControl
               label="Theme"
               value={theme}

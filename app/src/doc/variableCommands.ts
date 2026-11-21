@@ -15,7 +15,7 @@ import { collapsed } from '../sketch/commands'
 import { isDimensional, mustBePositive } from '../sketch/solver/constraints'
 import { isSolverReady, solveSketch } from '../sketch/solver/solver'
 import { evalValue } from '../sketch/solver/value'
-import { newId } from './commands'
+import { newId, syncBodyEntry } from './commands'
 import { namesIn, renameIn } from './expr'
 import { useProjectStore } from './store'
 import type { ProjectDocument, SketchEntity, SketchFeature, Variable } from './types'
@@ -41,6 +41,23 @@ function newErrorOf(before: readonly Variable[], after: readonly Variable[], foc
 }
 
 type Plan = { ok: true; solved: Map<string, SketchEntity[]> } | { ok: false; message: string }
+
+/** Every variable in `vars` that is in `seed` or depends on it (directly or through other variables). */
+function affectedNames(vars: readonly Variable[], seed: ReadonlySet<string>): Set<string> {
+  const out = new Set(seed)
+  let added = true
+  while (added) {
+    added = false
+    for (const v of vars) {
+      if (out.has(v.name)) continue
+      if (namesIn(v.expression).some((n) => out.has(n))) {
+        out.add(v.name)
+        added = true
+      }
+    }
+  }
+  return out
+}
 
 /** Re-solves every sketch with a dimension that uses a variable, with the values in `scope`. */
 function planSketches(doc: ProjectDocument, names: ReadonlySet<string>, scope: ReadonlyMap<string, number>): Plan {
@@ -75,13 +92,14 @@ function commit(label: string, next: Variable[], focusId: string, touched: Reado
   const doc = state().doc
   const bad = newErrorOf(doc.variables, next, focusId)
   if (bad !== null) return refuse(bad)
-  const plan = planSketches(doc, touched, evaluateVariables(next).values)
+  const plan = planSketches(doc, affectedNames(next, touched), evaluateVariables(next).values)
   if (!plan.ok) return refuse(plan.message)
   state().apply(label, (draft) => {
     draft.variables = next
     for (const f of draft.features) {
       const entities = f.type === 'sketch' ? plan.solved.get(f.id) : undefined
       if (f.type === 'sketch' && entities) f.sketch.entities = entities
+      if (f.type === 'pattern') syncBodyEntry(draft, f)
     }
   })
   return { ok: true }

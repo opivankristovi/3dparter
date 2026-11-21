@@ -1,4 +1,5 @@
 // Dimension values as people read and type them: lengths in the display unit, angles in degrees.
+import { useSettings } from '../app/useSettings'
 import { checkFieldText } from '../doc/fieldInput'
 import type { FieldCheck } from '../doc/fieldInput'
 import { isNumberLiteral } from '../doc/expr'
@@ -7,8 +8,13 @@ import type { ConstraintType, DisplayUnit, Expr } from '../doc/types'
 import { formatDisplay } from '../doc/units'
 
 /** Stored value (mm, or degrees for an angle) to field text. */
-export function valueToText(type: ConstraintType, value: number, units: DisplayUnit): string {
-  return type === 'angle' ? String(Number(value.toFixed(3))) : formatDisplay(value, units)
+export function valueToText(
+  type: ConstraintType,
+  value: number,
+  units: DisplayUnit,
+  digits = useSettings.getState().settings.precision ?? 2,
+): string {
+  return type === 'angle' ? String(Number(value.toFixed(digits))) : formatDisplay(value, units, digits)
 }
 
 /**
@@ -33,16 +39,22 @@ const LABEL_EXPR_MAX = 18
  * The text on a dimension label. A number reads "40 mm"; an expression reads "w * 2 = 30 mm" (a long
  * expression is cut with an ellipsis; the full text is in the field and the accessible name).
  */
-export function dimensionLabel(type: ConstraintType, stored: Expr | undefined, value: number, units: DisplayUnit): string {
-  const shown = labelText(type, value, units)
+export function dimensionLabel(
+  type: ConstraintType,
+  stored: Expr | undefined,
+  value: number,
+  units: DisplayUnit,
+  digits?: number,
+): string {
+  const shown = labelText(type, value, units, digits)
   if (stored === undefined || isNumberLiteral(stored)) return shown
   const e = stored.trim()
   return `${e.length > LABEL_EXPR_MAX ? `${e.slice(0, LABEL_EXPR_MAX - 1)}…` : e} = ${shown}`
 }
 
 /** The text on a dimension label, e.g. "40 mm" or "90°". */
-export function labelText(type: ConstraintType, value: number, units: DisplayUnit): string {
-  return type === 'angle' ? `${valueToText(type, value, units)}°` : `${valueToText(type, value, units)} ${units}`
+export function labelText(type: ConstraintType, value: number, units: DisplayUnit, digits?: number): string {
+  return type === 'angle' ? `${valueToText(type, value, units, digits)}°` : `${valueToText(type, value, units, digits)} ${units}`
 }
 
 /** Plain words for a constraint type, for tooltips, the side list and screen readers. */

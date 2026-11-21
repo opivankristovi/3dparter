@@ -1,5 +1,6 @@
 // Tessellation: bodies to MeshData, sketch regions to display data.
 import type { Vec2, Vec3 } from '../doc/types'
+import { extractVerticesFromEdges } from '../viewport/hints'
 import type { MeshData, SketchRegionData } from './api'
 import { buildRegionFace, Scope } from './build'
 import type { BodyRecord, SketchRecord } from './regenerate'
@@ -35,6 +36,7 @@ export function meshBody(body: BodyRecord, quality: Quality): MeshData {
     indices: Uint32Array.from(m.triangles),
     faces,
     edges,
+    vertices: extractVerticesFromEdges(body.name, edges),
   }
 }
 

@@ -28,6 +28,17 @@ describe('checkFieldText', () => {
     expect(checkFieldText('361', 'mm', { kind: 'angle', upTo360: true }, scope)).toEqual({ ok: false, message: 'Enter an angle between 0 and 360.' })
     expect(checkFieldText('w * 30', 'mm', { kind: 'angle', upTo360: true }, scope).ok).toBe(false)
   })
+  it('refuses units of the wrong kind', () => {
+    const a = checkFieldText('45 deg', 'mm', { kind: 'length', positive: true }, scope)
+    expect(a.ok).toBe(false)
+    if (!a.ok) expect(a.message).toMatch(/angle/i)
+    const b = checkFieldText('45°', 'mm', { kind: 'length', positive: true }, scope)
+    expect(b.ok).toBe(false)
+    if (!b.ok) expect(b.message).toMatch(/angle/i)
+    const c = checkFieldText('5 in', 'mm', { kind: 'angle', upTo360: true }, scope)
+    expect(c.ok).toBe(false)
+    if (!c.ok) expect(c.message).toMatch(/length/i)
+  })
 })
 
 describe('evalStored', () => {

@@ -12,9 +12,11 @@ import type { MeshData, SketchRegionData } from '../kernel/api'
 import type { EntityState } from '../sketch/solver/defined'
 import { circlePolyline, localToWorld, rayPlane, worldToLocal } from '../sketch/geometry'
 import { buildGroups, faceNameAtTriangle, sortFaces } from './pick'
-import { EDGE_PICK_PX, edgeHint, edgeSegments, faceHint, nearestOnEdge2D } from './hints'
+import { EDGE_PICK_PX, VERTEX_PICK_PX, edgeHint, edgeSegments, extractVerticesFromEdges, faceHint, nearestOnEdge2D, segIntersectsRect2D } from './hints'
 import type { RefHint } from './hints'
 import type { FaceRange } from './pick'
+
+const _tmpV = new THREE.Vector3()
 
 
 const TOKEN_NAMES = [
@@ -64,10 +66,18 @@ export interface PickMode {
   planes: boolean
   regions: boolean
   /**
-   * What a click on a solid gives. 'face-edge' (default): a face, or an edge when one lies within 6 px of the
-   * pointer (edges win). 'edge': only edges. 'face': only faces. 'solid': the whole solid, faces and edges ignored.
+   * What a click on a solid gives. 'face-edge' (default): a vertex, edge, or face (vertices/edges win).
+   * 'edge': only edges. 'face': only faces. 'vertex': only vertices. 'solid': the whole solid, sub-elements ignored.
    */
-  bodyPick?: 'face-edge' | 'edge' | 'face' | 'solid'
+  bodyPick?: 'face-edge' | 'edge' | 'face' | 'solid' | 'vertex'
+}
+
+export interface BoxFrame {
+  left: number
+  top: number
+  width: number
+  height: number
+  crossing: boolean
 }
 
 export interface SketchGroup {
@@ -91,10 +101,16 @@ interface BodyObj {
   pickGeo: THREE.BufferGeometry
   edgeGeo: THREE.BufferGeometry
   visible: boolean
+  color: string | null
+  opacity: number
+  customMats: THREE.MeshStandardMaterial[] | null
   /** Edges as world-space segments, by name, for picking and for the highlight lines. */
   edgeList: { name: string; seg: number[] }[]
   edgeByName: Map<string, { name: string; seg: number[] }>
   faceByName: Map<string, FaceRange>
+  /** Unique edge endpoints, by name, for 3D vertex picking. */
+  vertexList: { name: string; point: Vec3 }[]
+  vertexByName: Map<string, Vec3>
   /** Hints are computed when something is first picked, then kept. */
   hints: Map<string, RefHint>
 }
@@ -219,6 +235,8 @@ export class ViewportEngine {
   private dotTexture: THREE.CanvasTexture | null = null
   private hoverLineMat = new LineMaterial({ depthTest: false, linewidth: HOVER_LINE_WIDTH })
   private selectLineMat = new LineMaterial({ depthTest: false, linewidth: SELECT_LINE_WIDTH })
+  private hoverPointMat: THREE.PointsMaterial
+  private selectPointMat: THREE.PointsMaterial
   private previewMat = new THREE.LineBasicMaterial({ depthTest: false })
   private gridMinorMat = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.18 })
   private gridMajorMat = new THREE.LineBasicMaterial({ transparent: true, opacity: 0.4 })
@@ -230,6 +248,9 @@ export class ViewportEngine {
   private planesVisible = false
   private hover: Ref | null = null
   private selection: Ref[] = []
+  private measureSegment: [Vec3, Vec3] | null = null
+  private displayMode: 'shaded' | 'wireframe' = 'shaded'
+  private sectionPlane: THREE.Plane | null = null
 
   private raycaster = new THREE.Raycaster()
   private down: { x: number; y: number } | null = null
@@ -249,6 +270,10 @@ export class ViewportEngine {
 
   /** Called on a left click (not after a drag) while picking is enabled. null = empty space. */
   onPick: (ref: Ref | null, additive: boolean) => void = () => {}
+  /** Called while dragging a selection rectangle over the canvas. */
+  onBoxFrame: ((box: BoxFrame | null) => void) | null = null
+  /** Called when a box-selection drag completes. */
+  onBoxSelect: (refs: Ref[], additive: boolean) => void = () => {}
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas
@@ -331,6 +356,17 @@ export class ViewportEngine {
       ctx.fill()
     }
     this.dotTexture = new THREE.CanvasTexture(dotCanvas)
+    const makePointMat = () =>
+      new THREE.PointsMaterial({
+        size: 10,
+        sizeAttenuation: false,
+        map: this.dotTexture,
+        transparent: true,
+        alphaTest: 0.4,
+        depthTest: false,
+      })
+    this.hoverPointMat = makePointMat()
+    this.selectPointMat = makePointMat()
     this.snapDotMat = new THREE.PointsMaterial({
       size: 9,
       sizeAttenuation: false,
@@ -366,7 +402,8 @@ export class ViewportEngine {
       mq.removeEventListener('change', onScheme)
     })
 
-    // Pointer picking.
+    // Pointer picking and box (area) selection.
+    let boxDrag: { startX: number; startY: number; active: boolean } | null = null
     const onMove = (e: PointerEvent) => {
       this.moveEvt = e
       if (e.buttons !== 0 || !this.pickEnabled) return
@@ -377,9 +414,48 @@ export class ViewportEngine {
         })
       }
     }
+    const onBoxMove = (e: PointerEvent) => {
+      if (!boxDrag) return
+      if (!this.pickEnabled) {
+        boxDrag = null
+        this.onBoxFrame?.(null)
+        return
+      }
+      if (!boxDrag.active && Math.hypot(e.clientX - boxDrag.startX, e.clientY - boxDrag.startY) > 6) {
+        boxDrag.active = true
+      }
+      if (boxDrag.active) {
+        const rect = canvas.getBoundingClientRect()
+        this.onBoxFrame?.({
+          left: Math.min(boxDrag.startX, e.clientX) - rect.left,
+          top: Math.min(boxDrag.startY, e.clientY) - rect.top,
+          width: Math.abs(e.clientX - boxDrag.startX),
+          height: Math.abs(e.clientY - boxDrag.startY),
+          crossing: e.clientX < boxDrag.startX,
+        })
+      }
+    }
+    const onBoxEnd = (e: PointerEvent) => {
+      const drag = boxDrag
+      boxDrag = null
+      window.removeEventListener('pointermove', onBoxMove)
+      window.removeEventListener('pointerup', onBoxEnd)
+      window.removeEventListener('pointercancel', onBoxEnd)
+      if (!drag?.active) return
+      this.onBoxFrame?.(null)
+      if (e.type === 'pointerup' && this.pickEnabled) {
+        this.onBoxSelect(this.pickInBox(drag.startX, drag.startY, e.clientX, e.clientY), e.shiftKey)
+      }
+    }
     const onLeave = () => this.setHover(null)
     const onDown = (e: PointerEvent) => {
       this.down = e.button === 0 ? { x: e.clientX, y: e.clientY } : null
+      if (e.button === 0 && e.pointerType !== 'touch' && this.pickEnabled) {
+        boxDrag = { startX: e.clientX, startY: e.clientY, active: false }
+        window.addEventListener('pointermove', onBoxMove)
+        window.addEventListener('pointerup', onBoxEnd)
+        window.addEventListener('pointercancel', onBoxEnd)
+      }
     }
     const onClick = (e: MouseEvent) => {
       if (!this.pickEnabled || e.button !== 0) return
@@ -397,6 +473,9 @@ export class ViewportEngine {
       canvas.removeEventListener('pointerleave', onLeave)
       canvas.removeEventListener('pointerdown', onDown)
       canvas.removeEventListener('click', onClick)
+      window.removeEventListener('pointermove', onBoxMove)
+      window.removeEventListener('pointerup', onBoxEnd)
+      window.removeEventListener('pointercancel', onBoxEnd)
       if (this.hoverRaf) cancelAnimationFrame(this.hoverRaf)
     })
 
@@ -560,6 +639,8 @@ export class ViewportEngine {
     for (const [key, m] of this.dotMats) m.color.copy(this.dotColor(key))
     this.hoverLineMat.color.copy(p.preselect)
     this.selectLineMat.color.copy(p.selection)
+    this.hoverPointMat.color.copy(p.preselect)
+    this.selectPointMat.color.copy(p.selection)
     this.previewMat.color.copy(p['sketch-under'])
     this.gridMinorMat.color.copy(p['viewport-grid'])
     this.gridMajorMat.color.copy(p['viewport-grid'])
@@ -568,7 +649,109 @@ export class ViewportEngine {
     this.axisMats[1].color.copy(p['axis-y'])
     this.axisMats[2].color.copy(p['axis-z'])
     this.snapDotMat.color.copy(p.accent)
+    this.syncBodyMaterialProps()
     this.drawLabels()
+  }
+
+  private resolveBodyColor(color: string | null): THREE.Color {
+    if (!color) return this.palette.body.clone()
+    const raw = color.startsWith('token:')
+      ? getComputedStyle(document.documentElement).getPropertyValue(`--t-color-${color.slice(6)}`).trim()
+      : color
+    const out = this.palette.body.clone()
+    if (raw) {
+      try {
+        out.set(raw)
+      } catch {
+        // Keep fallback body token colour if string isn't a valid CSS colour.
+      }
+    }
+    return out
+  }
+
+  private createBodyMatSet(): THREE.MeshStandardMaterial[] {
+    const mats: THREE.MeshStandardMaterial[] = []
+    for (let i = 0; i < 4; i++) {
+      mats.push(
+        new THREE.MeshStandardMaterial({
+          roughness: 0.65,
+          metalness: 0.05,
+          side: THREE.DoubleSide,
+          polygonOffset: true,
+          polygonOffsetFactor: 1,
+          polygonOffsetUnits: 1,
+        }),
+      )
+    }
+    return mats
+  }
+
+  private syncBodyMaterialProps() {
+    const p = this.palette
+    const wire = this.displayMode === 'wireframe'
+    const clips = this.sectionPlane ? [this.sectionPlane] : []
+    for (const m of this.bodyMats) {
+      m.wireframe = wire
+      m.clippingPlanes = clips
+    }
+    this.edgeMat.clippingPlanes = clips
+    for (const obj of this.bodies.values()) {
+      if (!obj.customMats) continue
+      const base = this.resolveBodyColor(obj.color)
+      const tint = (to: THREE.Color, k: number) => base.clone().lerp(to, k)
+      const transparent = obj.opacity < 1
+      obj.customMats[0].color.copy(base)
+      obj.customMats[1].color.copy(tint(p.preselect, 0.4))
+      obj.customMats[2].color.copy(tint(p.selection, 0.5))
+      obj.customMats[3].color.copy(tint(p.selection, 0.5).lerp(p.preselect, 0.35))
+      for (const m of obj.customMats) {
+        m.opacity = obj.opacity
+        m.transparent = transparent
+        m.depthWrite = !transparent
+        m.wireframe = wire
+        m.clippingPlanes = clips
+        m.needsUpdate = true
+      }
+    }
+  }
+
+  setDisplayMode(mode: 'shaded' | 'wireframe') {
+    if (this.displayMode === mode) return
+    this.displayMode = mode
+    this.syncBodyMaterialProps()
+    this.requestRender()
+  }
+
+  getDisplayMode(): 'shaded' | 'wireframe' {
+    return this.displayMode
+  }
+
+  setSectionView(enabled: boolean, plane?: PlaneFrame) {
+    this.renderer.localClippingEnabled = enabled
+    if (!enabled) {
+      this.sectionPlane = null
+    } else if (plane) {
+      this.sectionPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(
+        new THREE.Vector3(...plane.normal).normalize(),
+        new THREE.Vector3(...plane.origin),
+      )
+    } else {
+      const box = new THREE.Box3()
+      for (const b of this.bodies.values()) {
+        if (!b.visible) continue
+        b.geo.computeBoundingBox()
+        if (b.geo.boundingBox) box.union(b.geo.boundingBox)
+      }
+      const center = box.isEmpty() ? new THREE.Vector3(0, 0, 0) : box.getCenter(new THREE.Vector3())
+      // Keep the back (+Y) half so the default camera at (1, -1, 0.8) looks directly into the cut face.
+      this.sectionPlane = new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 1, 0), center)
+    }
+    this.syncBodyMaterialProps()
+    this.requestRender()
+  }
+
+  getSectionView(): boolean {
+    return this.sectionPlane !== null
   }
 
   private dotColor(key: string): THREE.Color {
@@ -682,9 +865,24 @@ export class ViewportEngine {
       if (!this.bodies.has(id)) this.bodies.set(id, this.buildBody(id, data))
     }
     for (const obj of this.bodies.values()) {
-      obj.visible = appearance[obj.id]?.visible !== false
+      const app = appearance[obj.id]
+      obj.visible = app?.visible !== false
       obj.group.visible = obj.visible
+      const nextColor = app?.color ?? null
+      const nextOpacity = app?.opacity ?? 1
+      const needsCustom = nextColor !== null || nextOpacity < 1
+      obj.color = nextColor
+      obj.opacity = nextOpacity
+      if (needsCustom && !obj.customMats) {
+        obj.customMats = this.createBodyMatSet()
+        obj.mesh.material = obj.customMats
+      } else if (!needsCustom && obj.customMats) {
+        obj.mesh.material = this.bodyMats
+        for (const m of obj.customMats) m.dispose()
+        obj.customMats = null
+      }
     }
+    this.syncBodyMaterialProps()
     this.refreshHighlights()
   }
 
@@ -718,6 +916,7 @@ export class ViewportEngine {
     this.bodiesGroup.add(group)
     this.requestRender()
     const edgeList = data.edges.map((e) => ({ name: e.name, seg: edgeSegments(e.points) }))
+    const vertexList = data.vertices ?? extractVerticesFromEdges(id, data.edges)
     return {
       id,
       data,
@@ -730,15 +929,24 @@ export class ViewportEngine {
       pickGeo,
       edgeGeo,
       visible: true,
+      color: null,
+      opacity: 1,
+      customMats: null,
       edgeList,
       edgeByName: new Map(edgeList.map((e) => [e.name, e])),
       faceByName: new Map(data.faces.map((f) => [f.name, f])),
+      vertexList,
+      vertexByName: new Map(vertexList.map((v) => [v.name, v.point])),
       hints: new Map(),
     }
   }
 
   private disposeBody(obj: BodyObj) {
     this.bodiesGroup.remove(obj.group)
+    if (obj.customMats) {
+      for (const m of obj.customMats) m.dispose()
+      obj.customMats = null
+    }
     obj.geo.dispose()
     obj.edgeGeo.dispose()
     obj.pickGeo.disposeBoundsTree()
@@ -806,6 +1014,12 @@ export class ViewportEngine {
     this.refreshHighlights()
   }
 
+  setMeasureSegment(seg: [Vec3, Vec3] | null) {
+    this.measureSegment = seg
+    this.refreshEdgeMarks()
+    this.requestRender()
+  }
+
   setRegions(list: SketchRegionData[]) {
     for (const r of this.regions) {
       this.regionsGroup.remove(r.mesh, r.outline)
@@ -859,7 +1073,7 @@ export class ViewportEngine {
     this.requestRender()
   }
 
-  /** Selected and hovered edges as wide lines on top of the model. */
+  /** Selected and hovered edges, vertices and measurement connector on top of the model. */
   private refreshEdgeMarks() {
     this.disposeChildren(this.edgeMarksGroup)
     const find = (name: string) => {
@@ -868,6 +1082,12 @@ export class ViewportEngine {
         if (e && b.visible) return e.seg
       }
       return undefined
+    }
+    const findVertex = (ref: Ref): Vec3 | undefined => {
+      const [bodyId] = ref.name.split('/vertex:')
+      const body = this.bodies.get(bodyId)
+      if (!body || !body.visible) return undefined
+      return body.vertexByName.get(ref.name) ?? ref.hint?.centroid
     }
     const add = (refs: Ref[], mat: LineMaterial, order: number) => {
       const seg: number[] = []
@@ -880,8 +1100,38 @@ export class ViewportEngine {
       l.frustumCulled = false
       this.edgeMarksGroup.add(l)
     }
+    const addPts = (pts: number[], mat: THREE.PointsMaterial, order: number) => {
+      if (pts.length === 0) return
+      const p = new THREE.Points(lineGeometry(pts), mat)
+      p.renderOrder = order
+      p.frustumCulled = false
+      this.edgeMarksGroup.add(p)
+    }
     add(this.selection, this.selectLineMat, 7)
     if (this.hover) add([this.hover], this.hoverLineMat, 8)
+
+    const selPts: number[] = []
+    for (const r of this.selection) {
+      if (r.kind === 'vertex') {
+        const pt = findVertex(r)
+        if (pt) selPts.push(...pt)
+      }
+    }
+    if (this.measureSegment) {
+      const [a, b] = this.measureSegment
+      const geo = new LineSegmentsGeometry()
+      geo.setPositions([...a, ...b])
+      const l = new LineSegments2(geo, this.selectLineMat)
+      l.renderOrder = 8
+      l.frustumCulled = false
+      this.edgeMarksGroup.add(l)
+      selPts.push(...a, ...b)
+    }
+    addPts(selPts, this.selectPointMat, 9)
+    if (this.hover?.kind === 'vertex') {
+      const pt = findVertex(this.hover)
+      if (pt) addPts([...pt], this.hoverPointMat, 10)
+    }
   }
 
   // ---- picking --------------------------------------------------------------------------------
@@ -920,7 +1170,11 @@ export class ViewportEngine {
       if (region) hit = region
     }
 
-    if (this.mode.bodies && pickKind !== 'solid' && pickKind !== 'face') {
+    if (this.mode.bodies && (pickKind === 'vertex' || pickKind === 'face-edge')) {
+      const vertex = this.nearestVertex(clientX, clientY, hit ? hit.distance : Infinity)
+      if (vertex) return vertex
+    }
+    if (this.mode.bodies && pickKind !== 'solid' && pickKind !== 'face' && pickKind !== 'vertex') {
       const edge = this.nearestEdge(clientX, clientY, hit ? hit.distance : Infinity)
       if (edge) return edge
     }
@@ -932,7 +1186,7 @@ export class ViewportEngine {
     const body = this.bodies.get(ud.bodyId as string)
     if (!body) return null
     if (pickKind === 'solid') return { kind: 'body', name: body.id }
-    if (pickKind === 'edge') return null
+    if (pickKind === 'edge' || pickKind === 'vertex') return null
     const face = hit.faceIndex == null ? null : faceNameAtTriangle(body.sorted, hit.faceIndex)
     return face ? { kind: 'face', name: face, hint: this.faceHintOf(body, face) } : { kind: 'body', name: body.id }
   }
@@ -949,24 +1203,160 @@ export class ViewportEngine {
     return h
   }
 
+  private toScreen(
+    x: number,
+    y: number,
+    z: number,
+    rect = this.canvas.getBoundingClientRect(),
+  ): [number, number, number] | null {
+    // Camera space looks down -z: anything closer than the near plane cannot be projected.
+    const camZ = _tmpV.set(x, y, z).applyMatrix4(this.camera.matrixWorldInverse).z
+    if (camZ > -this.camera.near) return null
+    _tmpV.set(x, y, z).project(this.camera)
+    return [rect.left + ((_tmpV.x + 1) / 2) * rect.width, rect.top + ((1 - _tmpV.y) / 2) * rect.height, -camZ]
+  }
+
+  /** The visible vertex closest to the pointer within VERTEX_PICK_PX and not occluded. */
+  private nearestVertex(clientX: number, clientY: number, limit: number): Ref | null {
+    const rect = this.canvas.getBoundingClientRect()
+    const eye = this.camera.position
+    let best: { distance: number; v: { name: string; point: Vec3 } } | null = null
+    for (const body of this.bodies.values()) {
+      if (!body.visible) continue
+      for (const v of body.vertexList) {
+        const s = this.toScreen(v.point[0], v.point[1], v.point[2], rect)
+        if (!s) continue
+        const d = Math.hypot(s[0] - clientX, s[1] - clientY)
+        if (d >= VERTEX_PICK_PX || (best && d >= best.distance)) continue
+        const depth = Math.hypot(v.point[0] - eye.x, v.point[1] - eye.y, v.point[2] - eye.z)
+        if (depth > limit + Math.max(1, limit * 0.01)) continue
+        best = { distance: d, v }
+      }
+    }
+    return best ? { kind: 'vertex', name: best.v.name, hint: { centroid: [...best.v.point] } } : null
+  }
+
+  /** Box (area) selection: left-to-right selects fully enclosed items; right-to-left selects crossing items. */
+  pickInBox(x0: number, y0: number, x1: number, y1: number): Ref[] {
+    if (!this.mode.bodies) return []
+    this.scene.updateMatrixWorld()
+    this.camera.updateMatrixWorld()
+    const rect = this.canvas.getBoundingClientRect()
+    const minX = Math.min(x0, x1)
+    const maxX = Math.max(x0, x1)
+    const minY = Math.min(y0, y1)
+    const maxY = Math.max(y0, y1)
+    const crossing = x1 < x0
+    const inside = (p: [number, number, number]) => p[0] >= minX && p[0] <= maxX && p[1] >= minY && p[1] <= maxY
+    const pickKind = this.mode.bodyPick ?? 'face-edge'
+    const out: Ref[] = []
+
+    for (const body of this.bodies.values()) {
+      if (!body.visible) continue
+      if (pickKind === 'vertex') {
+        for (const v of body.vertexList) {
+          const s = this.toScreen(v.point[0], v.point[1], v.point[2], rect)
+          if (s && inside(s)) out.push({ kind: 'vertex', name: v.name, hint: { centroid: [...v.point] } })
+        }
+        continue
+      }
+      if (pickKind === 'edge') {
+        for (const e of body.edgeList) {
+          if (e.seg.length < 6) continue
+          let allIn = true
+          let anyCross = false
+          for (let i = 0; i + 5 < e.seg.length; i += 6) {
+            const p = this.toScreen(e.seg[i], e.seg[i + 1], e.seg[i + 2], rect)
+            const q = this.toScreen(e.seg[i + 3], e.seg[i + 4], e.seg[i + 5], rect)
+            if (!p || !q || !inside(p) || !inside(q)) allIn = false
+            if (p && q && segIntersectsRect2D(p[0], p[1], q[0], q[1], minX, minY, maxX, maxY)) anyCross = true
+          }
+          if (crossing ? anyCross : allIn) {
+            const pts = body.data.edges.find((x) => x.name === e.name)?.points
+            out.push({ kind: 'edge', name: e.name, hint: pts ? edgeHint(pts) : undefined })
+          }
+        }
+        continue
+      }
+
+      const pos = body.data.positions
+      const idx = body.data.indices
+      const nVerts = Math.floor(pos.length / 3)
+      const projected: ([number, number, number] | null)[] = new Array(nVerts)
+      for (let i = 0; i < nVerts; i++) {
+        projected[i] = this.toScreen(pos[i * 3], pos[i * 3 + 1], pos[i * 3 + 2], rect)
+      }
+
+      if (pickKind === 'face') {
+        for (const f of body.sorted) {
+          if (f.count < 3) continue
+          let allIn = true
+          let anyCross = false
+          const end = Math.min(f.start + f.count, idx.length)
+          for (let i = f.start; i + 2 < end; i += 3) {
+            const pa = projected[idx[i]]
+            const pb = projected[idx[i + 1]]
+            const pc = projected[idx[i + 2]]
+            if (!pa || !pb || !pc || !inside(pa) || !inside(pb) || !inside(pc)) allIn = false
+            if (
+              pa &&
+              pb &&
+              pc &&
+              (segIntersectsRect2D(pa[0], pa[1], pb[0], pb[1], minX, minY, maxX, maxY) ||
+                segIntersectsRect2D(pb[0], pb[1], pc[0], pc[1], minX, minY, maxX, maxY) ||
+                segIntersectsRect2D(pc[0], pc[1], pa[0], pa[1], minX, minY, maxX, maxY))
+            ) {
+              anyCross = true
+            }
+          }
+          if (crossing ? anyCross : allIn) {
+            out.push({ kind: 'face', name: f.name, hint: this.faceHintOf(body, f.name) })
+          }
+        }
+        continue
+      }
+
+      // 'solid' or 'face-edge' selects solids in box-select mode.
+      let allIn = nVerts > 0
+      let anyCross = false
+      for (const p of projected) {
+        if (!p || !inside(p)) {
+          allIn = false
+          if (crossing && anyCross) break
+        } else {
+          anyCross = true
+        }
+      }
+      if (crossing && !anyCross) {
+        for (let i = 0; i + 2 < idx.length; i += 3) {
+          const pa = projected[idx[i]]
+          const pb = projected[idx[i + 1]]
+          const pc = projected[idx[i + 2]]
+          if (
+            pa &&
+            pb &&
+            pc &&
+            (segIntersectsRect2D(pa[0], pa[1], pb[0], pb[1], minX, minY, maxX, maxY) ||
+              segIntersectsRect2D(pb[0], pb[1], pc[0], pc[1], minX, minY, maxX, maxY) ||
+              segIntersectsRect2D(pc[0], pc[1], pa[0], pa[1], minX, minY, maxX, maxY))
+          ) {
+            anyCross = true
+            break
+          }
+        }
+      }
+      if (crossing ? anyCross : allIn) out.push({ kind: 'body', name: body.id })
+    }
+    return out
+  }
+
   /**
    * The edge closest to the pointer, if it is within EDGE_PICK_PX on screen and not hidden behind a surface
    * that is `limit` away along the view ray.
    */
   private nearestEdge(clientX: number, clientY: number, limit: number): Ref | null {
     const rect = this.canvas.getBoundingClientRect()
-    const view = this.camera.matrixWorldInverse
-    const near = this.camera.near
     const eye = this.camera.position
-    const tmp = new THREE.Vector3()
-    const toScreen = (x: number, y: number, z: number): [number, number, number] | null => {
-      tmp.set(x, y, z)
-      // Camera space looks down -z: anything closer than the near plane cannot be projected.
-      const camZ = tmp.clone().applyMatrix4(view).z
-      if (camZ > -near) return null
-      tmp.project(this.camera)
-      return [rect.left + ((tmp.x + 1) / 2) * rect.width, rect.top + ((1 - tmp.y) / 2) * rect.height, -camZ]
-    }
     let best: { distance: number; body: BodyObj; name: string } | null = null
     for (const body of this.bodies.values()) {
       if (!body.visible) continue
@@ -975,8 +1365,8 @@ export class ViewportEngine {
         const kept: number[] = []
         const depths: number[] = []
         for (let i = 0; i + 5 < e.seg.length; i += 6) {
-          const p = toScreen(e.seg[i], e.seg[i + 1], e.seg[i + 2])
-          const q = toScreen(e.seg[i + 3], e.seg[i + 4], e.seg[i + 5])
+          const p = this.toScreen(e.seg[i], e.seg[i + 1], e.seg[i + 2], rect)
+          const q = this.toScreen(e.seg[i + 3], e.seg[i + 4], e.seg[i + 5], rect)
           if (!p || !q) continue
           screen.push(p[0], p[1], q[0], q[1])
           depths.push(p[2], q[2])
@@ -1267,12 +1657,35 @@ export class ViewportEngine {
     this.flyTo(new THREE.Vector3(...c), n.clone().add(tilt), dist)
   }
 
+  private syncControlsUp() {
+    const c = this.controls as unknown as { _quat?: THREE.Quaternion; _quatInverse?: THREE.Quaternion }
+    if (c._quat && c._quatInverse) {
+      c._quat.setFromUnitVectors(this.camera.up, new THREE.Vector3(0, 1, 0))
+      c._quatInverse.copy(c._quat).invert()
+    }
+  }
+
   /** Fly to look along `dir` (the direction from the target to the camera), keeping target and distance. */
   viewFrom(dir: Vec3) {
+    this.camera.up.set(0, 0, 1)
+    this.syncControlsUp()
     const d = new THREE.Vector3(...dir).normalize()
     // Top and Bottom: a tiny tilt keeps "up" defined (screen up is +Y from the top, -Y from below).
     if (Math.abs(d.z) > 0.99) d.add(new THREE.Vector3(0, -0.001, 0))
     this.flyTo(this.controls.target.clone(), d, this.camera.position.distanceTo(this.controls.target))
+  }
+
+  /** Rolls the camera 90 degrees left (-90) or right (+90) around the view axis. */
+  rollView(deg: 90 | -90) {
+    this.anim = null
+    const dir = this.camera.position.clone().sub(this.controls.target).normalize()
+    const screenUp = new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion).normalize()
+    screenUp.applyAxisAngle(dir, THREE.MathUtils.degToRad(deg)).normalize()
+    this.camera.up.copy(screenUp)
+    this.syncControlsUp()
+    this.camera.lookAt(this.controls.target)
+    this.controls.update()
+    this.requestRender()
   }
 
   /** Back to the 3D view the user had before the sketch opened. No-op if no sketch view is active. */
@@ -1280,11 +1693,32 @@ export class ViewportEngine {
     const v = this.preSketchView
     if (!v) return
     this.preSketchView = null
+    this.camera.up.set(0, 0, 1)
+    this.syncControlsUp()
     this.flyTo(v.target, v.dir, v.dist)
   }
 
   resetView() {
+    this.camera.up.set(0, 0, 1)
+    this.syncControlsUp()
     this.flyTo(new THREE.Vector3(0, 0, 0), DEFAULT_DIR, DEFAULT_DISTANCE)
+  }
+
+  zoomToFace(frame: PlaneFrame) {
+    const n = new THREE.Vector3(...frame.normal).normalize()
+    const tilt = Math.abs(n.z) > 0.99 ? new THREE.Vector3(0, -0.001, 0) : new THREE.Vector3(0, 0, 0)
+    this.camera.up.set(0, 0, 1)
+    this.syncControlsUp()
+    const box = new THREE.Box3()
+    for (const b of this.bodies.values()) {
+      if (!b.visible) continue
+      b.geo.computeBoundingBox()
+      if (b.geo.boundingBox) box.union(b.geo.boundingBox)
+    }
+    const radius = box.isEmpty() ? 30 : Math.max(15, box.getBoundingSphere(new THREE.Sphere()).radius)
+    const { tanV, tanH } = this.freeTans()
+    const dist = (radius / Math.sin(Math.atan(Math.min(tanV, tanH)))) * 0.9
+    this.flyTo(new THREE.Vector3(...frame.origin), n.add(tilt), Math.max(40, dist))
   }
 
   /** Frame a box. null = nothing to frame, go back to the home view. */
@@ -1388,6 +1822,8 @@ export class ViewportEngine {
       this.regionLineMat,
       this.hoverLineMat,
       this.selectLineMat,
+      this.hoverPointMat,
+      this.selectPointMat,
       this.previewMat,
       this.gridMinorMat,
       this.gridMajorMat,

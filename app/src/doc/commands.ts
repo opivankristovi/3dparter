@@ -1,8 +1,10 @@
 // Document commands. Each one is exactly one undo step (one call to store.apply).
 import { activeCount, canMove, describeMove, moveOutcome, reorder, rollbackFromCount } from './history'
+import { evalExpr } from './expr'
 import { expectMove } from './moveGuard'
 import { useProjectStore } from './store'
-import type { Feature, ProjectDocument } from './types'
+import type { BodyAppearance, Feature, ProjectDocument } from './types'
+import { scopeOf } from './variables'
 
 export function newId(): string {
   return crypto.randomUUID()
@@ -12,12 +14,18 @@ const TYPE_LABEL: Record<Feature['type'], string> = {
   sketch: 'Sketch',
   extrude: 'Extrude',
   revolve: 'Revolve',
+  sweep: 'Sweep',
+  loft: 'Loft',
   fillet: 'Fillet',
   chamfer: 'Chamfer',
   shell: 'Shell',
   boolean: 'Combine',
   transform: 'Move',
+  split: 'Split',
+  mirror: 'Mirror',
+  pattern: 'Pattern',
   plane: 'Plane',
+  import: 'Import',
 }
 
 /** "Sketch 1", "Extrude 2", ... The number is one more than the highest in use for that type. */
@@ -39,26 +47,48 @@ function nextBodyName(doc: ProjectDocument): string {
   }
 }
 
-/** A feature that starts a new solid owns a bodies entry keyed by its id (or `<id>:<n>` for transform copies). */
-function syncBodyEntry(draft: ProjectDocument, f: Feature) {
-  if (f.type === 'transform') {
+/** A feature that starts a new solid owns a bodies entry keyed by its id (or `<id>:<n>` for multi-body outputs). */
+export function syncBodyEntry(draft: ProjectDocument, f: Feature) {
+  const syncCopies = (count: number) => {
     const wanted = new Set<string>()
-    if (f.params.copy) {
-      for (let i = 0; i < f.params.bodies.length; i++) {
-        const key = `${f.id}:${i + 1}`
-        wanted.add(key)
-        if (!draft.bodies[key]) {
-          draft.bodies[key] = { name: nextBodyName(draft), color: null, opacity: 1, visible: true, itemFolderId: null }
-        }
+    for (let i = 1; i <= count; i++) {
+      const key = `${f.id}:${i}`
+      wanted.add(key)
+      if (!draft.bodies[key]) {
+        draft.bodies[key] = { name: nextBodyName(draft), color: null, opacity: 1, visible: true, itemFolderId: null }
       }
     }
     const prefix = `${f.id}:`
     for (const key of Object.keys(draft.bodies)) {
       if (key.startsWith(prefix) && !wanted.has(key)) delete draft.bodies[key]
     }
+  }
+  if (f.type === 'transform') {
+    syncCopies(f.params.copy ? f.params.bodies.length : 0)
     return
   }
-  const makesBody = (f.type === 'extrude' || f.type === 'revolve') && f.params.mode === 'new'
+  if (f.type === 'split') {
+    syncCopies(1)
+    return
+  }
+  if (f.type === 'mirror') {
+    syncCopies(!f.params.merge ? f.params.bodies.length : 0)
+    return
+  }
+  if (f.type === 'pattern') {
+    const r = evalExpr(f.params.count, scopeOf(draft))
+    const raw = Math.round(r.ok ? r.value : Number(f.params.count) || 2)
+    const count = Math.max(2, Math.min(50, Number.isFinite(raw) ? raw : 2))
+    syncCopies((count - 1) * f.params.bodies.length)
+    return
+  }
+  if (f.type === 'import') {
+    if (!draft.bodies[f.id]) {
+      draft.bodies[f.id] = { name: nextBodyName(draft), color: null, opacity: 1, visible: true, itemFolderId: null }
+    }
+    return
+  }
+  const makesBody = (f.type === 'extrude' || f.type === 'revolve' || f.type === 'sweep' || f.type === 'loft') && f.params.mode === 'new'
   if (makesBody && !draft.bodies[f.id]) {
     draft.bodies[f.id] = { name: nextBodyName(draft), color: null, opacity: 1, visible: true, itemFolderId: null }
   } else if (!makesBody && draft.bodies[f.id]) {
@@ -124,6 +154,15 @@ export function setBodyVisible(bodyId: string, visible: boolean) {
   useProjectStore.getState().apply(visible ? 'Show body' : 'Hide body', (draft) => {
     const b = draft.bodies[bodyId]
     if (b) b.visible = visible
+  })
+}
+
+export function setBodyAppearance(bodyId: string, partial: Partial<Pick<BodyAppearance, 'color' | 'opacity'>>) {
+  useProjectStore.getState().apply('Change solid appearance', (draft) => {
+    const b = draft.bodies[bodyId]
+    if (!b) return
+    if (partial.color !== undefined) b.color = partial.color
+    if (partial.opacity !== undefined) b.opacity = partial.opacity
   })
 }
 

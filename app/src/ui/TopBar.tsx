@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { ArrowLeft, Download, Moon, Redo2, Ruler, Settings, Undo2 } from 'lucide-react'
+import { ArrowLeft, Download, Moon, Redo2, Ruler, Settings, Undo2, Upload } from 'lucide-react'
 import { IconButton } from './IconButton'
 import { ProgressIndicator } from './ProgressIndicator'
 import { StatusChip } from './StatusChip'
@@ -18,6 +18,9 @@ export interface TopBarProps {
   onBack?: () => void
   onUndo?: () => void
   onRedo?: () => void
+  measureActive?: boolean
+  onMeasure?: () => void
+  onImport?: () => void
   onExport?: () => void
   onSettings?: () => void
   onThemeToggle?: () => void
@@ -99,6 +102,9 @@ export function TopBar({
   onBack,
   onUndo,
   onRedo,
+  measureActive,
+  onMeasure,
+  onImport,
   onExport,
   onSettings,
   onThemeToggle,
@@ -130,7 +136,12 @@ export function TopBar({
         <IconButton label="Redo" shortcut="Ctrl Y" icon={<Redo2 size={20} strokeWidth={1.75} />} disabled={!canRedo} onClick={onRedo} />
       </div>
       <div className="flex items-center justify-end gap-1">
-        {hideMeasure ? null : <IconButton label="Measure" shortcut="M" icon={<Ruler size={20} strokeWidth={1.75} />} />}
+        {hideMeasure ? null : (
+          <IconButton label="Measure" shortcut="U" icon={<Ruler size={20} strokeWidth={1.75} />} pressed={measureActive} onClick={onMeasure} />
+        )}
+        {compact || !onImport ? null : (
+          <IconButton label="Import" icon={<Upload size={20} strokeWidth={1.75} />} onClick={onImport} />
+        )}
         <IconButton label="Export" icon={<Download size={20} strokeWidth={1.75} />} onClick={onExport} />
         {compact ? null : (
           <>

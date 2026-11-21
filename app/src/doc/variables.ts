@@ -113,11 +113,11 @@ export function scopeOf(doc: Pick<ProjectDocument, 'variables'>): Scope {
  * Evaluates field text against evaluated variables. Like evalExpr, but a name that is a BROKEN variable
  * says so instead of claiming it does not exist.
  */
-export function evalField(text: string, ev: Evaluated): EvalResult {
+export function evalField(text: string, ev: Evaluated, kind?: 'length' | 'angle'): EvalResult {
   for (const n of namesIn(text)) {
     if (ev.errorNames.has(n)) return { ok: false, message: `The variable ${n} has an error.` }
   }
-  return evalExpr(text, ev.values)
+  return evalExpr(text, ev.values, kind)
 }
 
 // ---- expression fields of features -------------------------------------------------------------
@@ -137,10 +137,33 @@ export interface ExprField {
 /** Every Expr field of a feature (not sketch dimensions: those are on the sketch's constraints). */
 export function exprFields(f: Feature): ExprField[] {
   switch (f.type) {
-    case 'extrude':
-      return [{ label: 'Distance', kind: 'length', value: f.params.distance, set: (t) => (f.params.distance = t) }]
+    case 'extrude': {
+      const out: ExprField[] = [
+        { label: 'Distance', kind: 'length', value: f.params.distance, set: (t) => (f.params.distance = t) },
+      ]
+      if (f.params.startOffset !== undefined) {
+        out.push({
+          label: 'Start offset',
+          kind: 'length',
+          value: f.params.startOffset,
+          set: (t) => (f.params.startOffset = t),
+          emptyIsZero: true,
+        })
+      }
+      return out
+    }
     case 'revolve':
       return [{ label: 'Angle', kind: 'angle', value: f.params.angle, set: (t) => (f.params.angle = t) }]
+    case 'pattern':
+      return [
+        { label: 'Count', kind: 'length', value: f.params.count, set: (t) => (f.params.count = t) },
+        {
+          label: f.params.kind === 'circular' ? 'Angle' : 'Spacing',
+          kind: f.params.kind === 'circular' ? 'angle' : 'length',
+          value: f.params.spacing,
+          set: (t) => (f.params.spacing = t),
+        },
+      ]
     case 'fillet':
       return [{ label: 'Radius', kind: 'length', value: f.params.radius, set: (t) => (f.params.radius = t) }]
     case 'chamfer':

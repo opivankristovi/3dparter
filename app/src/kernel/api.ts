@@ -31,6 +31,7 @@ export interface MeshData {
   indices: Uint32Array
   faces: { name: string; start: number; count: number }[]
   edges: { name: string; points: Float32Array }[] // polyline per edge, xyz
+  vertices?: { name: string; point: Vec3 }[]
 }
 
 /** A closed region of a solved sketch that can be extruded. */
@@ -43,7 +44,7 @@ export interface SketchRegionData {
   area: number // mm²
 }
 
-export type ExportFormat = 'stl' // M4 adds '3mf' | 'step'
+export type ExportFormat = 'stl' | '3mf' | 'step'
 
 export interface ExportOptions {
   /** Chordal tolerance in mm. "high" = 0.01, "low" = 0.1 (see architecture.md). */
@@ -51,6 +52,18 @@ export interface ExportOptions {
   /** Angular tolerance in radians. */
   angularTolerance: number
   binary: boolean
+}
+
+export interface MeasureValue {
+  label: string
+  kind: 'length' | 'area' | 'volume' | 'angle' | 'point'
+  value?: number
+  point?: Vec3
+}
+
+export interface MeasureResult {
+  items: MeasureValue[]
+  segment?: [Vec3, Vec3]
 }
 
 export interface KernelApi {
@@ -69,6 +82,8 @@ export interface KernelApi {
   constructionPlanes(): Promise<{ name: string; frame: PlaneFrame }[]>
   /** Bounding box of all visible bodies, for "zoom to fit". null if there are none. */
   bounds(): Promise<{ min: Vec3; max: Vec3 } | null>
+  /** Measures 1 or 2 picked refs (length, radius, area, volume, coordinates, distance, angle). */
+  measure(refs: Ref[]): Promise<MeasureResult>
   exportFile(format: ExportFormat, bodyIds: string[], opts: ExportOptions): Promise<ArrayBuffer>
   /** Frees every OpenCascade object. Call when closing a project. */
   dispose(): Promise<void>

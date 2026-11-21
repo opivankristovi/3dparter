@@ -9,6 +9,7 @@ import { addConstraint, deleteConstraints, deleteSketchEntities, setConstraintVa
 import type { ConstraintResult } from './commands'
 import { CONSTRAINT_NAMES, checkDimensionText, valueToText } from './dimensions'
 import { dimensionFor, orderRefs, refsOfSelection, wholeEntityIds } from './pick'
+import { filletSketchCorner, mirrorSketchSelection, patternSketchSelection, trimSketchEntity } from './sketchEditOps'
 import { applicableConstraints } from './solver/applicable'
 import { detectArmStarts } from './solver/arms'
 import { isDimensional } from './solver/constraints'
@@ -181,4 +182,53 @@ export function deleteSelected(): boolean {
 
 export function setAutoConstraints(on: boolean) {
   useSketchUi.getState().set({ autoConstraints: on })
+}
+
+/** T key or Trim button: trims the selected (or hovered) sketch entity at intersections. */
+export function trimSelection() {
+  const c = current()
+  if (!c) return
+  const ui = useSketchUi.getState()
+  const ids = wholeEntityIds(c.refs)
+  const targetId = ids[0] ?? (ui.hoverRef ? wholeEntityIds([ui.hoverRef])[0] : undefined)
+  if (!targetId) {
+    toaster({ variant: 'info', title: 'Select or point at a sketch line, circle or arc to trim.' })
+    return
+  }
+  if (trimSketchEntity(c.sketchId, targetId)) useProjectStore.getState().setSelection([])
+}
+
+/** Rounds the corner where two selected lines (or a selected corner point) meet. */
+export function filletCornerSelection(radius = 3) {
+  const c = current()
+  if (!c) return
+  if (!filletSketchCorner(c.sketchId, c.refs, radius)) {
+    toaster({ variant: 'info', title: 'Select two meeting lines or a corner point to fillet.' })
+    return
+  }
+  useProjectStore.getState().setSelection([])
+}
+
+/** Mirrors selected sketch geometry across a selected line (prefers a construction line). */
+export function mirrorSketchSelected() {
+  const c = current()
+  if (!c) return
+  const ids = wholeEntityIds(c.refs)
+  if (!mirrorSketchSelection(c.sketchId, ids)) {
+    toaster({ variant: 'info', title: 'Select geometry and an axis line to mirror across.' })
+    return
+  }
+  useProjectStore.getState().setSelection([])
+}
+
+/** Duplicates selected sketch geometry in a 3-copy linear array. */
+export function patternSketchSelected() {
+  const c = current()
+  if (!c) return
+  const ids = wholeEntityIds(c.refs)
+  if (!patternSketchSelection(c.sketchId, ids)) {
+    toaster({ variant: 'info', title: 'Select sketch geometry to pattern.' })
+    return
+  }
+  useProjectStore.getState().setSelection([])
 }

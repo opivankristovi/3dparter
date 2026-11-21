@@ -123,6 +123,8 @@ export const useProjectStore = create<ProjectState>()((set, get) => {
     const s = get()
     const ids = new Set(s.doc.features.map((f) => f.id))
     if (s.editingFeatureId && !ids.has(s.editingFeatureId)) set({ editingFeatureId: null })
+    const pruned = s.selection.filter((r) => r.kind !== 'body' || !!s.doc.bodies[r.name])
+    if (pruned.length !== s.selection.length) set({ selection: pruned })
     syncFlags()
     scheduleSave()
   }

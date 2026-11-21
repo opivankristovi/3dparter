@@ -99,10 +99,24 @@ export function isPreviewable(f: Feature): boolean {
       return f.params.profiles.length > 0 && (f.params.mode === 'new' || f.params.targets.length > 0)
     case 'revolve':
       return f.params.profiles.length > 0 && f.params.axis.name !== '' && (f.params.mode === 'new' || f.params.targets.length > 0)
+    case 'sweep':
+      return (
+        f.params.profile.name !== '' &&
+        f.params.path.name !== '' &&
+        (f.params.mode === 'new' || f.params.targets.length > 0)
+      )
+    case 'loft':
+      return f.params.profiles.length >= 2 && (f.params.mode === 'new' || f.params.targets.length > 0)
     case 'shell':
       return f.params.body.name !== ''
     case 'transform':
       return f.params.bodies.length > 0
+    case 'split':
+      return f.params.body.name !== '' && f.params.plane.name !== ''
+    case 'mirror':
+      return f.params.bodies.length > 0 && f.params.plane.name !== ''
+    case 'pattern':
+      return f.params.bodies.length > 0 && f.params.axis.name !== ''
     case 'plane':
       return f.params.base.name !== ''
     default:
@@ -117,6 +131,10 @@ export function toolForFeature(type: Feature['type']): string | null {
       return 'extrude'
     case 'revolve':
       return 'revolve'
+    case 'sweep':
+      return 'sweep'
+    case 'loft':
+      return 'loft'
     case 'fillet':
       return 'fillet'
     case 'chamfer':
@@ -127,6 +145,12 @@ export function toolForFeature(type: Feature['type']): string | null {
       return 'combine'
     case 'transform':
       return 'move'
+    case 'split':
+      return 'split'
+    case 'mirror':
+      return 'mirror'
+    case 'pattern':
+      return 'pattern'
     case 'plane':
       return 'plane'
     default:
@@ -143,6 +167,16 @@ export function cloneForEdit(f: Feature): Feature {
       return {
         ...f,
         params: { ...f.params, profiles: [...f.params.profiles], targets: [...f.params.targets], axis: { ...f.params.axis } },
+      }
+    case 'sweep':
+      return {
+        ...f,
+        params: { ...f.params, profile: { ...f.params.profile }, path: { ...f.params.path }, targets: [...f.params.targets] },
+      }
+    case 'loft':
+      return {
+        ...f,
+        params: { ...f.params, profiles: [...f.params.profiles], targets: [...f.params.targets] },
       }
     case 'fillet':
     case 'chamfer':
@@ -163,6 +197,12 @@ export function cloneForEdit(f: Feature): Feature {
             : null,
         },
       }
+    case 'split':
+      return { ...f, params: { body: { ...f.params.body }, plane: { ...f.params.plane } } }
+    case 'mirror':
+      return { ...f, params: { ...f.params, bodies: [...f.params.bodies], plane: { ...f.params.plane } } }
+    case 'pattern':
+      return { ...f, params: { ...f.params, bodies: [...f.params.bodies], axis: { ...f.params.axis } } }
     case 'plane':
       return { ...f, params: { ...f.params, base: { ...f.params.base } } }
     default:
@@ -175,7 +215,10 @@ export function selectionForFeature(f: Feature): Ref[] {
   switch (f.type) {
     case 'extrude':
     case 'revolve':
+    case 'loft':
       return [...f.params.profiles]
+    case 'sweep':
+      return [f.params.profile, f.params.path].filter((r) => r.name !== '')
     case 'fillet':
     case 'chamfer':
       return [...f.params.edges]
@@ -184,9 +227,15 @@ export function selectionForFeature(f: Feature): Ref[] {
     case 'boolean':
       return combineSelection(f)
     case 'transform':
+    case 'mirror':
+    case 'pattern':
       return [...f.params.bodies]
+    case 'split':
+      return f.params.body.name ? [f.params.body] : []
     case 'plane':
       return f.params.base.name ? [f.params.base] : []
+    case 'import':
+      return [{ kind: 'body', name: f.id }]
     default:
       return []
   }

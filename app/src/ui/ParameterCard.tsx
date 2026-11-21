@@ -19,8 +19,10 @@ export interface ParameterCardProps {
   title: string
   icon: ReactNode
   children: ReactNode
-  onApply: () => void
-  onCancel: () => void
+  onApply?: () => void
+  onCancel?: () => void
+  onClose?: () => void
+  footer?: ReactNode
   applyDisabled?: boolean
   /** Thin progress line under the header while the kernel works. */
   busy?: boolean
@@ -52,6 +54,8 @@ export function ParameterCard({
   children,
   onApply,
   onCancel,
+  onClose,
+  footer,
   applyDisabled,
   busy,
   isCurrent,
@@ -73,7 +77,7 @@ export function ParameterCard({
     if (!queued || busy) return
     if (latest.current.isCurrent && !latest.current.isCurrent()) return
     setQueued(false)
-    if (!applyDisabled) latest.current.onApply()
+    if (!applyDisabled) latest.current.onApply?.()
   }, [queued, busy, applyDisabled])
 
   useEffect(() => {
@@ -82,11 +86,13 @@ export function ParameterCard({
     el?.focus()
   }, [])
 
+  const close = onClose ?? onCancel
+
   const onKeyDown = (e: KeyboardEvent<HTMLElement>) => {
     if (e.key === 'Escape') {
       e.stopPropagation()
-      onCancel()
-    } else if (e.key === 'Enter' && e.target instanceof HTMLInputElement && e.target.type === 'text') {
+      close?.()
+    } else if (e.key === 'Enter' && onApply && e.target instanceof HTMLInputElement && e.target.type === 'text') {
       setQueued(true)
     } else if (queued) {
       setQueued(false)
@@ -112,7 +118,7 @@ export function ParameterCard({
         {editingStep !== undefined ? (
           <span className="rounded-pill bg-accent-subtle px-2 text-xs text-accent">Editing step {editingStep}</span>
         ) : null}
-        <IconButton label="Close" icon={<X size={16} strokeWidth={1.75} />} size={28} onClick={onCancel} />
+        <IconButton label="Close" icon={<X size={16} strokeWidth={1.75} />} size={28} onClick={close} />
       </div>
       {busy ? <ProgressIndicator label="Updating preview" /> : <div className="h-0.5" />}
       <div ref={body} className="flex flex-col gap-2 p-3">
@@ -124,18 +130,22 @@ export function ParameterCard({
         ) : null}
         {children}
       </div>
-      {/* Desktop: Cancel and Apply leave the card for an action bar at the bottom centre of the screen (still
-          inside the dialog, so Esc, Enter and the accessible tree stay as they are). */}
-      <footer className="flex justify-end gap-2 px-3 pb-3 lg:fixed lg:bottom-2 lg:left-1/2 lg:z-10 lg:-translate-x-1/2 lg:rounded-lg lg:bg-surface-raised lg:p-2 lg:shadow-panel">
-        <Button variant="secondary" onClick={onCancel}>
-          Cancel
-          <ActionKey>Esc</ActionKey>
-        </Button>
-        <Button variant="primary" onClick={onApply} disabled={applyDisabled}>
-          Apply
-          <ActionKey>Enter</ActionKey>
-        </Button>
-      </footer>
+      {footer !== undefined ? (
+        <footer className="flex justify-end gap-2 px-3 pb-3">{footer}</footer>
+      ) : (
+        /* Desktop: Cancel and Apply leave the card for an action bar at the bottom centre of the screen (still
+           inside the dialog, so Esc, Enter and the accessible tree stay as they are). */
+        <footer className="flex justify-end gap-2 px-3 pb-3 lg:fixed lg:bottom-2 lg:left-1/2 lg:z-10 lg:-translate-x-1/2 lg:rounded-lg lg:bg-surface-raised lg:p-2 lg:shadow-panel">
+          <Button variant="secondary" onClick={onCancel}>
+            Cancel
+            <ActionKey>Esc</ActionKey>
+          </Button>
+          <Button variant="primary" onClick={onApply} disabled={applyDisabled}>
+            Apply
+            <ActionKey>Enter</ActionKey>
+          </Button>
+        </footer>
+      )}
     </section>
   )
 }

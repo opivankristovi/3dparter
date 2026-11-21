@@ -2,7 +2,7 @@
 import * as Comlink from 'comlink'
 import type { ProjectDocument, Ref } from '../doc/types'
 import type { ExportFormat, ExportOptions, KernelApi, MeshData } from './api'
-import { exportStl } from './export'
+import { exportBodies } from './export'
 import { meshBody, sketchRegionData } from './mesh'
 import { KERNEL_VERSION } from './occ'
 import { loadOCBrowser } from './occ.browser'
@@ -89,14 +89,18 @@ const api: KernelApi = {
     return { min, max }
   },
 
+  async measure(refs: Ref[]) {
+    await init()
+    return kernel.measure(refs)
+  },
+
   async exportFile(format: ExportFormat, bodyIds: string[], opts: ExportOptions) {
     await init()
-    if (format !== 'stl') throw new Error('This file format arrives in a later version.')
     const bodies = bodyIds.flatMap((id) => {
       const b = kernel.getBody(id)
       return b ? [b] : []
     })
-    const buffer = await exportStl(bodies, opts)
+    const buffer = await exportBodies(format, bodies, opts)
     return Comlink.transfer(buffer, [buffer])
   },
 

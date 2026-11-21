@@ -108,8 +108,73 @@ export function nearestOnSegment2D(
   return { t, distance: Math.hypot(px - (ax + dx * t), py - (ay + dy * t)) }
 }
 
-/** Screen distance (px) under which an edge counts as under the pointer. */
+/** Screen distance (px) under which an edge or vertex counts as under the pointer. */
 export const EDGE_PICK_PX = 6
+export const VERTEX_PICK_PX = 8
+
+/** Deduplicates and orders unique edge endpoints into deterministic named vertices. */
+export function extractVerticesFromEdges(
+  bodyId: string,
+  edges: { name: string; points: ArrayLike<number> }[],
+): { name: string; point: Vec3 }[] {
+  const unique: Vec3[] = []
+  const addPoint = (x: number, y: number, z: number) => {
+    for (const u of unique) {
+      if (Math.hypot(u[0] - x, u[1] - y, u[2] - z) < 1e-4) return
+    }
+    unique.push([x, y, z])
+  }
+  for (const e of edges) {
+    const n = e.points.length
+    if (n < 3) continue
+    addPoint(e.points[0], e.points[1], e.points[2])
+    if (n >= 6) addPoint(e.points[n - 3], e.points[n - 2], e.points[n - 1])
+  }
+  unique.sort((a, b) => {
+    for (let i = 0; i < 3; i++) {
+      if (Math.abs(a[i] - b[i]) > 1e-5) return a[i] - b[i]
+    }
+    return 0
+  })
+  return unique.map((point, i) => ({ name: `${bodyId}/vertex:${i + 1}`, point }))
+}
+
+function segCrossesSeg2D(ax: number, ay: number, bx: number, by: number, cx: number, cy: number, dx: number, dy: number): boolean {
+  const cross = (ux: number, uy: number, vx: number, vy: number) => ux * vy - uy * vx
+  const abx = bx - ax
+  const aby = by - ay
+  const cdx = dx - cx
+  const cdy = dy - cy
+  const denom = cross(abx, aby, cdx, cdy)
+  if (Math.abs(denom) < EPS) return false
+  const acx = cx - ax
+  const acy = cy - ay
+  const t = cross(acx, acy, cdx, cdy) / denom
+  const u = cross(acx, acy, abx, aby) / denom
+  return t >= 0 && t <= 1 && u >= 0 && u <= 1
+}
+
+/** True when the 2D segment a-b lies inside or crosses the axis-aligned rectangle [minX..maxX, minY..maxY]. */
+export function segIntersectsRect2D(
+  ax: number,
+  ay: number,
+  bx: number,
+  by: number,
+  minX: number,
+  minY: number,
+  maxX: number,
+  maxY: number,
+): boolean {
+  const inside = (x: number, y: number) => x >= minX && x <= maxX && y >= minY && y <= maxY
+  if (inside(ax, ay) || inside(bx, by)) return true
+  if (Math.max(ax, bx) < minX || Math.min(ax, bx) > maxX || Math.max(ay, by) < minY || Math.min(ay, by) > maxY) return false
+  return (
+    segCrossesSeg2D(ax, ay, bx, by, minX, minY, maxX, minY) ||
+    segCrossesSeg2D(ax, ay, bx, by, maxX, minY, maxX, maxY) ||
+    segCrossesSeg2D(ax, ay, bx, by, maxX, maxY, minX, maxY) ||
+    segCrossesSeg2D(ax, ay, bx, by, minX, maxY, minX, minY)
+  )
+}
 
 export interface EdgeCandidate {
   /** Smallest pointer distance in px over the edge's segments. */

@@ -161,6 +161,8 @@ export interface ExtrudeFeature extends FeatureBase {
     profiles: Ref[] // sketchRegion refs (all from one sketch in M0)
     distance: Expr // mm
     direction: 1 | -1 | 0 // 1 along the plane normal, -1 against it, 0 = symmetric both sides
+    extent?: 'distance' | 'throughAll'
+    startOffset?: Expr
     mode: BooleanMode // M0: 'new' only
     targets: Ref[] // bodies for union/subtract/intersect (M2)
   }
@@ -233,16 +235,58 @@ export interface PlaneFeature extends FeatureBase {
   params: { base: Ref; offset: Expr; angle: Expr }
 }
 
+/** Sweeps a sketch profile along a sketch edge or 3D edge path. */
+export interface SweepFeature extends FeatureBase {
+  type: 'sweep'
+  params: { profile: Ref; path: Ref; mode: BooleanMode; targets: Ref[] }
+}
+
+/** Lofts a smooth solid across two or more sketch profile regions. */
+export interface LoftFeature extends FeatureBase {
+  type: 'loft'
+  params: { profiles: Ref[]; mode: BooleanMode; targets: Ref[] }
+}
+
+/** Splits a solid into two solids along an origin plane, construction plane, or flat face. */
+export interface SplitFeature extends FeatureBase {
+  type: 'split'
+  params: { body: Ref; plane: Ref }
+}
+
+/** Mirrors solids across a plane, either as new copy bodies or joined onto the originals. */
+export interface MirrorFeature extends FeatureBase {
+  type: 'mirror'
+  params: { bodies: Ref[]; plane: Ref; merge: boolean }
+}
+
+/** Duplicates solids in a linear row or circular array. */
+export interface PatternFeature extends FeatureBase {
+  type: 'pattern'
+  params: { kind: 'linear' | 'circular'; bodies: Ref[]; axis: Ref; count: Expr; spacing: Expr }
+}
+
+/** Root body imported from an external STEP file (S10 / F08). */
+export interface ImportFeature extends FeatureBase {
+  type: 'import'
+  params: { filename: string; format: 'step'; content: string }
+}
+
 export type Feature =
   | SketchFeature
   | ExtrudeFeature
   | RevolveFeature
+  | SweepFeature
+  | LoftFeature
   | FilletFeature
   | ChamferFeature
   | ShellFeature
   | BooleanFeature
   | TransformFeature
+  | SplitFeature
+  | MirrorFeature
+  | PatternFeature
   | PlaneFeature
+  | ImportFeature
 
 export interface Variable {
   id: string

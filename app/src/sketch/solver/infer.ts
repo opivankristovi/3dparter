@@ -3,12 +3,47 @@ import { newId } from '../../doc/commands'
 import type { SketchConstraint, SketchEntity, Vec2 } from '../../doc/types'
 import { formatRef, getPoint, pointSlots } from './refs'
 
-export type DrawKind = 'line' | 'rectangle' | 'circle' | 'arc'
+export type DrawKind = 'line' | 'rectangle' | 'circle' | 'arc' | 'polygon' | 'slot' | 'ellipse' | 'spline'
 
 export interface InferOptions {
   /** Distance in mm under which two points count as the same point. */
   tolMm: number
   kind: DrawKind
+}
+
+/** Joins coincident endpoints among `entities` themselves (without snapping to the rest of the sketch). */
+export function connectInternalEndpoints(entities: SketchEntity[], tolMm = 1e-6): SketchConstraint[] {
+  const fresh: Anchor[] = []
+  for (const e of entities) {
+    for (const slot of pointSlots(e)) {
+      const pos = getPoint(e, slot)
+      if (pos) fresh.push({ ref: formatRef(e.id, slot), pos })
+    }
+  }
+  const out: SketchConstraint[] = []
+  const parent = new Map<string, string>()
+  const find = (x: string): string => {
+    let r = x
+    while (parent.has(r) && parent.get(r) !== r) r = parent.get(r) as string
+    return r
+  }
+  const entityOf = (ref: string) => ref.slice(0, ref.lastIndexOf('.'))
+  for (let i = 0; i < fresh.length; i++) {
+    for (let j = i + 1; j < fresh.length; j++) {
+      const a = fresh[i]
+      const b = fresh[j]
+      if (entityOf(a.ref) === entityOf(b.ref)) continue
+      if (Math.hypot(a.pos[0] - b.pos[0], a.pos[1] - b.pos[1]) <= tolMm) {
+        const ra = find(a.ref)
+        const rb = find(b.ref)
+        if (ra !== rb) {
+          parent.set(ra, rb)
+          out.push(make('coincident', [a.ref, b.ref]))
+        }
+      }
+    }
+  }
+  return out
 }
 
 /** Lines within this angle of an axis become horizontal / vertical. */

@@ -2,6 +2,7 @@
 // and kept in step with the camera. Everything here can be reached with the keyboard and is also listed
 // in the side panel.
 import { useEffect, useMemo, useRef } from 'react'
+import { useSettings } from '../app/useSettings'
 import { useProjectStore } from '../doc/store'
 import type { PlaneFrame, Sketch, SketchConstraint, SketchEntity, Vec2 } from '../doc/types'
 import { scopeOf } from '../doc/variables'
@@ -159,6 +160,7 @@ export interface SketchOverlayProps {
 export function SketchOverlay({ engine, frame, sketchId, entities, constraints }: SketchOverlayProps) {
   const root = useRef<HTMLDivElement>(null)
   const units = useProjectStore((s) => s.doc.units)
+  const precision = useSettings((s) => s.settings.precision)
   const selection = useProjectStore((s) => s.selection)
   const ui = useSketchUi()
 
@@ -227,7 +229,7 @@ export function SketchOverlay({ engine, frame, sketchId, entities, constraints }
     if (!layout) return []
     const value = c.driving ? evalValue(c.value, scopeOf(useProjectStore.getState().doc)) : (measureConstraint(sketch, c) ?? NaN)
     if (!Number.isFinite(value)) return []
-    return [{ c, layout, text: `${DIM_PREFIX[c.type] ?? ''}${dimensionLabel(c.type, c.driving ? c.value : undefined, value, units)}`, value }]
+    return [{ c, layout, text: `${DIM_PREFIX[c.type] ?? ''}${dimensionLabel(c.type, c.driving ? c.value : undefined, value, units, precision)}`, value }]
   })
 
   // Selected points get a ring (the entity itself is highlighted in the viewport).

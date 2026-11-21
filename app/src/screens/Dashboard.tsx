@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useLocation } from 'wouter'
-import { Box, FolderOpen, LayoutGrid, List, Monitor, Moon, Plus, Search, SearchX, Settings, Sun, Trash2 } from 'lucide-react'
+import { Box, Download, FolderOpen, LayoutGrid, List, Monitor, Moon, Plus, Search, SearchX, Settings, Sun, Trash2, Upload } from 'lucide-react'
 import { relativeTime } from '../app/relativeTime'
 import { useSettings } from '../app/useSettings'
+import { exportProjectJson, parseProjectFile } from '../data/projectFile'
 import {
   createProject,
   deleteProject,
+  getProject,
   listProjects,
   purgeProject,
   renameProject,
@@ -89,6 +91,7 @@ export function Dashboard() {
   const [purging, setPurging] = useState<ProjectRow | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const request = useRef(0)
+  const importInputRef = useRef<HTMLInputElement>(null)
 
   const reload = useCallback(async () => {
     const mine = ++request.current
@@ -133,9 +136,29 @@ export function Dashboard() {
     })
   }
 
+  const importProject = async (file: File) => {
+    try {
+      const parsed = parseProjectFile(await file.text())
+      const p = await createProject(parsed.name, parsed.document)
+      await reload()
+      toast({ title: `Imported '${p.name}'` })
+    } catch (e) {
+      toast({
+        variant: 'error',
+        title: "Couldn't import the project",
+        description: e instanceof Error ? e.message : 'Check that it is a valid .3dparter.json file.',
+      })
+    }
+  }
+
   const menuFor = (p: ProjectRow): MenuEntry[] => [
     { label: 'Open', onSelect: () => navigate(`/p/${p.id}`) },
     { label: 'Rename', onSelect: () => setRenamingId(p.id) },
+    {
+      label: 'Export project',
+      icon: <Download {...ic} />,
+      onSelect: () => void getProject(p.id).then((row) => row && exportProjectJson(row.name, row.document)),
+    },
     { type: 'separator' },
     { label: 'Delete', danger: true, onSelect: () => void remove(p) },
   ]
@@ -238,7 +261,7 @@ export function Dashboard() {
         <div className="mx-auto flex h-(--layout-topbar-h) w-full max-w-(--layout-dashboard-max) items-center gap-2 px-4">
           <a href="#/" className="flex items-center gap-2 rounded-sm text-lg font-semibold">
             <Box size={20} strokeWidth={1.75} className="text-accent" aria-hidden="true" />
-            3DShaper
+            3DParter
           </a>
           <div className="flex-1" />
           <ThemeMenu />
@@ -249,6 +272,21 @@ export function Dashboard() {
       <main className="mx-auto flex w-full max-w-(--layout-dashboard-max) flex-col gap-4 px-4 py-6">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="flex-1 text-xl">{inTrash ? 'Trash' : 'Projects'}</h1>
+          <input
+            ref={importInputRef}
+            type="file"
+            aria-label="Import project file"
+            accept=".json,.3dparter,.3dparter.json,.3dshaper,.3dshaper.json"
+            className="sr-only"
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              e.target.value = ''
+              if (f) void importProject(f)
+            }}
+          />
+          <Button variant="secondary" size="lg" icon={<Upload size={20} strokeWidth={1.75} />} onClick={() => importInputRef.current?.click()}>
+            Import project
+          </Button>
           <Button variant="primary" size="lg" icon={<Plus size={20} strokeWidth={1.75} />} onClick={() => void create()}>
             New project
           </Button>

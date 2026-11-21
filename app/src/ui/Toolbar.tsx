@@ -33,7 +33,7 @@ export function ToolbarSeparator({
   // The separator runs across the toolbar, so a vertical toolbar gets a horizontal rule.
   return (
     <T.Separator
-      className={orientation === 'vertical' ? cn('my-1 h-px bg-border', wide ? 'w-full' : 'w-8') : 'mx-1 h-6 w-px bg-border'}
+      className={orientation === 'vertical' ? cn('my-1 h-px bg-border', wide ? 'w-full' : 'w-8') : 'mx-1 h-6 w-px shrink-0 bg-border'}
     />
   )
 }

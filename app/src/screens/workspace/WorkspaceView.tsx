@@ -13,7 +13,9 @@ import { getKernel } from '../../kernel/client'
 import { useCombineTool } from '../../modeling/CombineTool'
 import { cancelDraft } from '../../modeling/draft'
 import { useEdgeBlendTool } from '../../modeling/EdgeBlendTool'
-import { handlePick } from '../../modeling/picking'
+import { useLoftTool, useMirrorTool, usePatternTool, useSplitTool, useSweepTool } from '../../modeling/M5Tools'
+import { useMeasureTool } from '../../modeling/MeasureTool'
+import { handleBoxPick, handlePick } from '../../modeling/picking'
 import { usePlaneTool } from '../../modeling/PlaneTool'
 import { useRevolveTool } from '../../modeling/RevolveTool'
 import { useShellTool } from '../../modeling/ShellTool'
@@ -31,6 +33,7 @@ import { installTestHook } from '../../testing/hook'
 import { ViewportEngine } from '../../viewport/engine'
 import type { PickMode } from '../../viewport/engine'
 import { Viewport } from '../../viewport/Viewport'
+import type { ViewportMenuItem } from '../../viewport/Viewport'
 import type { ExportOptions } from '../dialogs/ExportDialog'
 import { Workspace } from '../Workspace'
 import { isTypingTarget } from './hooks'
@@ -39,6 +42,44 @@ import { useKernel } from './useKernel'
 import { useToolStore } from './toolStore'
 
 const THUMBNAIL_DELAY_MS = 3000
+
+const SUGGESTIONS: Record<'body' | 'plane' | 'edge' | 'region', { id: string; label: string }[]> = {
+  body: [
+    { id: 'move', label: 'Move' },
+    { id: 'shell', label: 'Shell' },
+    { id: 'mirror', label: 'Mirror' },
+    { id: 'pattern', label: 'Pattern' },
+    { id: 'split', label: 'Split' },
+    { id: 'combine', label: 'Combine' },
+  ],
+  plane: [
+    { id: 'sketch.rectangle', label: 'Sketch' },
+    { id: 'plane', label: 'Plane' },
+    { id: 'split', label: 'Split' },
+    { id: 'mirror', label: 'Mirror' },
+  ],
+  edge: [
+    { id: 'fillet', label: 'Fillet' },
+    { id: 'chamfer', label: 'Chamfer' },
+    { id: 'sweep', label: 'Sweep' },
+  ],
+  region: [
+    { id: 'extrude', label: 'Extrude' },
+    { id: 'revolve', label: 'Revolve' },
+    { id: 'loft', label: 'Loft' },
+    { id: 'sweep', label: 'Sweep' },
+  ],
+}
+
+function suggestedToolsFor(selection: Ref[]): { id: string; label: string }[] {
+  if (selection.length === 0) return []
+  const first = selection[0].kind
+  if (first === 'sketchRegion') return SUGGESTIONS.region
+  if (first === 'edge') return SUGGESTIONS.edge
+  if (first === 'face' || first === 'originPlane' || first === 'constructionPlane') return SUGGESTIONS.plane
+  if (first === 'body') return SUGGESTIONS.body
+  return []
+}
 
 function Chip({ children }: { children: ReactNode }) {
   return (
@@ -87,6 +128,9 @@ export function WorkspaceView() {
   const draft = useToolStore((s) => s.draft)
   const draftReplaces = useToolStore((s) => s.draftReplaces)
   const activeSketchId = useToolStore((s) => s.activeSketchId)
+  const selectionFilter = useToolStore((s) => s.selectionFilter)
+  const sectionView = useToolStore((s) => s.sectionView)
+  const displayMode = useToolStore((s) => s.displayMode)
 
   const toast = useToast()
   const [engine, setEngine] = useState<ViewportEngine | null>(null)
@@ -94,12 +138,24 @@ export function WorkspaceView() {
   const kernel = useKernel(doc, draft, draftReplaces)
   const extrude = useExtrudeTool(kernel, engine)
   const revolve = useRevolveTool(kernel)
+  const sweep = useSweepTool(kernel)
+  const loft = useLoftTool(kernel)
   const fillet = useEdgeBlendTool('fillet', kernel)
   const chamfer = useEdgeBlendTool('chamfer', kernel)
   const shell = useShellTool(kernel)
   const combine = useCombineTool(kernel)
+  const split = useSplitTool(kernel)
+  const mirror = useMirrorTool(kernel)
+  const pattern = usePatternTool(kernel)
   const transform = useTransformTool(kernel, engine)
   const plane = usePlaneTool(kernel, engine)
+  const measure = useMeasureTool(kernel, engine)
+
+  useEffect(() => () => {
+    const ts = useToolStore.getState()
+    ts.setSectionView(false)
+    ts.setDisplayMode('shaded')
+  }, [])
   useHistoryEdit()
   // After every finished regenerate: a move that broke a step that built before is put back.
   useEffect(() => {
@@ -120,7 +176,8 @@ export function WorkspaceView() {
   const sketching = activeSketchId !== null
   const sketchTool = activeTool?.startsWith('sketch.') ?? false
   const noBodies = Object.keys(doc.bodies).length === 0
-  const planesVisible = !sketching && (noBodies || sketchTool || activeTool === 'plane')
+  const planesVisible =
+    !sketching && (noBodies || sketchTool || activeTool === 'plane' || activeTool === 'split' || activeTool === 'mirror')
 
   // ---- tool wiring ----------------------------------------------------------------------------------
 
@@ -177,6 +234,7 @@ export function WorkspaceView() {
   useEffect(() => {
     if (!engine) return
     engine.onPick = (ref, additive) => handlePick(ref, additive, meshesRef.current)
+    engine.onBoxSelect = (refs, additive) => handleBoxPick(refs, additive, meshesRef.current)
   }, [engine])
 
   useEffect(() => {
@@ -187,8 +245,18 @@ export function WorkspaceView() {
     engine?.setConstructionPlanes(kernel.planes)
   }, [engine, kernel.planes])
 
+  useEffect(() => {
+    engine?.setDisplayMode(displayMode)
+  }, [engine, displayMode])
+
+  useEffect(() => {
+    engine?.setSectionView(sectionView)
+  }, [engine, sectionView])
+
   const regionList = useMemo(() => {
-    if (activeTool === 'extrude' || activeTool === 'revolve') return Object.values(kernel.regions).flat()
+    if (activeTool === 'extrude' || activeTool === 'revolve' || activeTool === 'sweep' || activeTool === 'loft') {
+      return Object.values(kernel.regions).flat()
+    }
     if (activeSketchId) return kernel.regions[activeSketchId] ?? []
     return []
   }, [activeTool, activeSketchId, kernel.regions])
@@ -201,36 +269,65 @@ export function WorkspaceView() {
     if (!engine) return
     engine.setPlanesVisible(planesVisible)
     engine.setConstructionPlanesVisible(!sketching)
+    const filterPick: PickMode['bodyPick'] =
+      selectionFilter === 'body'
+        ? 'solid'
+        : selectionFilter === 'face'
+          ? 'face'
+          : selectionFilter === 'edge'
+            ? 'edge'
+            : selectionFilter === 'vertex'
+              ? 'vertex'
+              : 'face-edge'
     const bodyPick: PickMode['bodyPick'] =
       activeTool === 'fillet' || activeTool === 'chamfer'
         ? 'edge'
-        : activeTool === 'combine' ||
-            activeTool === 'move' ||
-            ((activeTool === 'extrude' || activeTool === 'revolve') &&
-              (draft?.type === 'extrude' || draft?.type === 'revolve') &&
-              draft.params.mode !== 'new')
-          ? 'solid'
-          : activeTool === 'shell' || activeTool === 'plane' || (sketchTool && !sketching)
-            ? 'face'
+        : activeTool === 'sweep'
+          ? draft?.type === 'sweep' && draft.params.mode !== 'new' && draft.params.path.name
+            ? 'solid'
             : 'face-edge'
+          : activeTool === 'split'
+            ? draft?.type === 'split' && draft.params.body.name
+              ? 'face'
+              : 'solid'
+            : activeTool === 'mirror' || activeTool === 'pattern'
+              ? draft && (draft.type === 'mirror' || draft.type === 'pattern') && draft.params.bodies.length > 0
+                ? 'face-edge'
+                : 'solid'
+              : activeTool === 'combine' ||
+                  activeTool === 'move' ||
+                  ((activeTool === 'extrude' || activeTool === 'revolve' || activeTool === 'loft') &&
+                    (draft?.type === 'extrude' || draft?.type === 'revolve' || draft?.type === 'loft') &&
+                    draft.params.mode !== 'new')
+                ? 'solid'
+                : activeTool === 'shell' || activeTool === 'plane' || (sketchTool && !sketching)
+                  ? 'face'
+                  : filterPick
     engine.setPickMode(
       {
         bodies: !sketching,
         planes: planesVisible,
-        regions: activeTool === 'extrude' || activeTool === 'revolve',
+        regions: activeTool === 'extrude' || activeTool === 'revolve' || activeTool === 'sweep' || activeTool === 'loft',
         bodyPick,
       },
       !sketching,
     )
-  }, [engine, planesVisible, sketching, sketchTool, activeTool, draft])
+  }, [engine, planesVisible, sketching, sketchTool, activeTool, draft, selectionFilter])
 
   useEffect(() => {
     if (!engine) return
     const refs = [...selection]
-    const extra = [...extrude.profiles, ...revolve.profiles, ...fillet.edges, ...chamfer.edges]
+    const extra = [
+      ...extrude.profiles,
+      ...revolve.profiles,
+      ...(sweep.profiles ?? []),
+      ...(loft.profiles ?? []),
+      ...fillet.edges,
+      ...chamfer.edges,
+    ]
     for (const p of extra) if (!refs.some((r) => r.kind === p.kind && r.name === p.name)) refs.push(p)
     engine.setSelection(refs)
-  }, [engine, selection, extrude.profiles, revolve.profiles, fillet.edges, chamfer.edges])
+  }, [engine, selection, extrude.profiles, revolve.profiles, sweep.profiles, loft.profiles, fillet.edges, chamfer.edges])
 
   // ---- zoom to fit ----------------------------------------------------------------------------------
 
@@ -257,12 +354,34 @@ export function WorkspaceView() {
       if (e.defaultPrevented || isTypingTarget(e.target)) return
       if (document.querySelector('[role="dialog"][data-state="open"]')) return
       const s = useProjectStore.getState()
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key === '1') {
+        e.preventDefault()
+        engine?.resetView()
+        return
+      }
+      if (e.key === ' ' && !sketching && !s.activeTool && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+        const target = s.selection.find((r) => r.kind === 'face' || r.kind === 'originPlane' || r.kind === 'constructionPlane')
+        if (target && engine) {
+          e.preventDefault()
+          void getKernel()
+            .planeFrame(target)
+            .then((frame) => {
+              if (frame) engine.zoomToFace(frame)
+            })
+        }
+        return
+      }
       if (e.key === 'Escape') {
         if (useToolStore.getState().draft) {
           cancelDraft()
           s.setActiveTool(null)
         } else if (s.selection.length > 0) s.setSelection([])
         else if (s.activeTool) s.setActiveTool(null)
+        else if (useToolStore.getState().selectionFilter !== 'all') useToolStore.getState().setSelectionFilter('all')
+      } else if (e.key.toLowerCase() === 'b' && !sketching && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+        e.preventDefault()
+        const ts = useToolStore.getState()
+        ts.setSelectionFilter(ts.selectionFilter === 'body' ? 'all' : 'body')
       } else if (e.key.toLowerCase() === 'f' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
         e.preventDefault()
         void fit()
@@ -270,7 +389,7 @@ export function WorkspaceView() {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [fit])
+  }, [fit, sketching, engine])
 
   // ---- thumbnail ------------------------------------------------------------------------------------
 
@@ -295,19 +414,22 @@ export function WorkspaceView() {
     if (useToolStore.getState().draft) throw new Error('Apply or cancel the open tool first.')
     const s = useProjectStore.getState()
     const live = useToolStore.getState().liveBodies
-    const ids = Object.entries(s.doc.bodies)
+    const visibleIds = Object.entries(s.doc.bodies)
       .filter(([id, b]) => b.visible && (!live || live.includes(id)))
       .map(([id]) => id)
+    const selectedIds = new Set(s.selection.filter((r) => r.kind === 'body').map((r) => r.name))
+    const ids = opts.onlySelected ? visibleIds.filter((id) => selectedIds.has(id)) : visibleIds
     if (ids.length === 0) throw new Error('There is nothing visible to export.')
     const high = opts.quality === 'high'
-    const buffer = await getKernel().exportFile('stl', ids, {
+    const buffer = await getKernel().exportFile(opts.format, ids, {
       tolerance: high ? 0.01 : 0.1,
       angularTolerance: high ? 0.1 : 0.5,
       binary: opts.binary,
     })
     if (buffer.byteLength === 0) throw new Error('The export came out empty. Try again.')
     const safe = s.name.replace(/[\\/:*?"<>|]+/g, '-').trim() || 'model'
-    downloadBlob(new Blob([buffer], { type: 'model/stl' }), `${safe}.stl`)
+    const mime = opts.format === '3mf' ? 'model/3mf' : opts.format === 'step' ? 'model/step' : 'model/stl'
+    downloadBlob(new Blob([buffer], { type: mime }), `${safe}.${opts.format}`)
   }, [])
 
   // ---- status ---------------------------------------------------------------------------------------
@@ -344,6 +466,37 @@ export function WorkspaceView() {
     hint = <Chip>Pick a shape to revolve</Chip>
   }
 
+  const suggested = !sketching && !activeTool ? suggestedToolsFor(selection) : []
+
+  const contextMenuItems: ViewportMenuItem[] = useMemo(
+    () => [
+      { label: 'Zoom to fit', shortcut: 'F', onSelect: () => void fit() },
+      { label: 'Home view', shortcut: 'Ctrl 1', onSelect: () => engine?.resetView() },
+      {
+        label: 'Section view',
+        checked: sectionView,
+        onSelect: () => useToolStore.getState().setSectionView(!sectionView),
+      },
+      {
+        label: 'Wireframe',
+        checked: displayMode === 'wireframe',
+        onSelect: () => useToolStore.getState().setDisplayMode(displayMode === 'wireframe' ? 'shaded' : 'wireframe'),
+      },
+      {
+        label: 'Measure',
+        shortcut: 'U',
+        checked: activeTool === 'measure',
+        onSelect: () => useProjectStore.getState().setActiveTool(activeTool === 'measure' ? null : 'measure'),
+      },
+      {
+        label: 'Clear selection',
+        disabled: selection.length === 0,
+        onSelect: () => useProjectStore.getState().setSelection([]),
+      },
+    ],
+    [fit, engine, sectionView, displayMode, activeTool, selection.length],
+  )
+
   const status = (
     <>
       {kernel.engine === 'error' ? (
@@ -363,6 +516,19 @@ export function WorkspaceView() {
         </Button>
       ) : null}
       {sketching ? <SketchStatus /> : null}
+      {suggested.length > 0 ? (
+        <div
+          role="toolbar"
+          aria-label="Suggested actions"
+          className="pointer-events-auto flex flex-wrap items-center justify-center gap-1 rounded-lg border border-border bg-surface-raised p-1 shadow-panel"
+        >
+          {suggested.map((t) => (
+            <Button key={t.id} size="sm" variant="secondary" onClick={() => useProjectStore.getState().setActiveTool(t.id)}>
+              {t.label}
+            </Button>
+          ))}
+        </div>
+      ) : null}
       {hint}
     </>
   )
@@ -370,17 +536,23 @@ export function WorkspaceView() {
   const overlay =
     extrude.card ??
     revolve.card ??
+    sweep.card ??
+    loft.card ??
     fillet.card ??
     chamfer.card ??
     shell.card ??
     combine.card ??
+    split.card ??
+    mirror.card ??
+    pattern.card ??
     transform.card ??
-    plane.card
+    plane.card ??
+    measure.card
 
   return (
     <Workspace
       viewport={
-        <Viewport onEngine={setEngine}>
+        <Viewport onEngine={setEngine} contextMenuItems={contextMenuItems}>
           {engine ? <SketchLayer engine={engine} /> : null}
           {extrude.handle}
           {transform.handle}

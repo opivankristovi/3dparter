@@ -16,8 +16,12 @@ import {
   type ExtrudeFeature,
   type Feature,
   type FilletFeature,
+  type ImportFeature,
   type LineEntity,
+  type LoftFeature,
+  type MirrorFeature,
   type OriginPlaneName,
+  type PatternFeature,
   type PlaneFeature,
   type PlaneFrame,
   type ProjectDocument,
@@ -26,15 +30,19 @@ import {
   type ShellFeature,
   type SketchEntity,
   type SketchFeature,
+  type SplitFeature,
+  type SweepFeature,
   type TransformFeature,
   type Vec3,
 } from '../doc/types'
 import { evalField, evaluateVariables, exprFields } from '../doc/variables'
 import type { Evaluated } from '../doc/variables'
-import type { FeatureStatus, RegenResult } from './api'
+import type { FeatureStatus, MeasureResult, RegenResult } from './api'
 import { buildExtrusion, safeDelete, Scope, type BuiltBody } from './build'
-import type { Face } from 'replicad'
+import type { Edge, Face } from 'replicad'
 import { dirToLocal, dotVec, faceFrame, localToWorld, subVec, tiltAndOffset, worldToLocal } from './frames'
+import { buildLoft, buildSweep, edgeFromSketchEntity, importStepBody, mirrorBody, splitBody } from './m5Ops'
+import { measureRefs } from './measure'
 import { chamferBody, combine, discard, filletBody, shellBody, transformBody, type BoolOp } from './modify'
 import { HINT_WARNING, pickSubShapes, resolveBodyRef, resolveSubRef, type Resolved } from './naming'
 import { findRegions, type Region } from './regions'
@@ -124,10 +132,20 @@ function refsOf(f: Feature): Ref[] {
       return [...f.params.profiles, ...f.params.targets]
     case 'revolve':
       return [...f.params.profiles, f.params.axis, ...f.params.targets]
+    case 'sweep':
+      return [f.params.profile, f.params.path, ...f.params.targets]
+    case 'loft':
+      return [...f.params.profiles, ...f.params.targets]
     case 'shell':
       return [f.params.body, ...f.params.removeFaces]
     case 'transform':
       return f.params.bodies
+    case 'split':
+      return [f.params.body, f.params.plane]
+    case 'mirror':
+      return [...f.params.bodies, f.params.plane]
+    case 'pattern':
+      return [...f.params.bodies, f.params.axis]
     case 'plane':
       return [f.params.base]
     case 'fillet':
@@ -135,7 +153,7 @@ function refsOf(f: Feature): Ref[] {
       return f.params.edges
     case 'boolean':
       return [f.params.target, ...f.params.tools]
-    default:
+    case 'import':
       return []
   }
 }
@@ -161,8 +179,13 @@ function readsBodies(f: Feature): boolean {
     case 'plane':
       return f.params.base.kind === 'face'
     case 'extrude':
+      return f.params.mode !== 'new' || f.params.extent === 'throughAll'
     case 'revolve':
+    case 'sweep':
+    case 'loft':
       return f.params.mode !== 'new'
+    case 'import':
+      return false
     default:
       return true
   }
@@ -195,7 +218,7 @@ function resolveFeature(f: Feature, ev: Evaluated): { feature: Feature; error?: 
   for (const field of exprFields(copy)) {
     const text = String(field.value ?? '')
     if (field.emptyIsZero && text.trim() === '') continue
-    const r = evalField(text, ev)
+    const r = evalField(text, ev, field.kind)
     if (r.ok) {
       field.set(String(r.value))
     } else {
@@ -318,6 +341,10 @@ export class Regenerator {
     return [...this.bodies.values()]
   }
 
+  measure(refs: Ref[]): MeasureResult {
+    return measureRefs(refs, this.bodies)
+  }
+
   dispose(): void {
     const freed = new Set<BodyRecord>()
     for (const rec of this.records.values()) {
@@ -355,10 +382,20 @@ export class Regenerator {
           return this.evalExtrude(f, key, ctx)
         case 'revolve':
           return this.evalRevolve(f, key, ctx)
+        case 'sweep':
+          return this.evalSweep(f, key, ctx)
+        case 'loft':
+          return this.evalLoft(f, key, ctx)
         case 'shell':
           return this.evalShell(f, key, ctx)
         case 'transform':
           return this.evalTransform(f, key, ctx)
+        case 'split':
+          return this.evalSplit(f, key, ctx)
+        case 'mirror':
+          return this.evalMirror(f, key, ctx)
+        case 'pattern':
+          return this.evalPattern(f, key, ctx)
         case 'plane':
           return this.evalPlane(f, key, ctx)
         case 'fillet':
@@ -367,6 +404,8 @@ export class Regenerator {
           return this.evalEdgeOp(f, key, ctx)
         case 'boolean':
           return this.evalBoolean(f, key, ctx)
+        case 'import':
+          return this.evalImport(f, key)
         default:
           return fail(ERR_LATER)
       }
@@ -517,17 +556,49 @@ export class Regenerator {
     }
   }
 
+  private throughAllDistance(bodies: Iterable<BodyRecord>, frame: PlaneFrame, startOffset: number, direction: 1 | -1 | 0): number {
+    const sign = direction === -1 ? -1 : 1
+    const ox = frame.origin[0] + frame.normal[0] * startOffset
+    const oy = frame.origin[1] + frame.normal[1] * startOffset
+    const oz = frame.origin[2] + frame.normal[2] * startOffset
+    let maxSpan = 0
+    let any = false
+    for (const b of bodies) {
+      any = true
+      const bb = b.built.shape.boundingBox
+      const [lo, hi] = bb.bounds
+      bb.delete()
+      for (const x of [lo[0], hi[0]]) {
+        for (const y of [lo[1], hi[1]]) {
+          for (const z of [lo[2], hi[2]]) {
+            const proj = (x - ox) * frame.normal[0] * sign + (y - oy) * frame.normal[1] * sign + (z - oz) * frame.normal[2] * sign
+            maxSpan = Math.max(maxSpan, direction === 0 ? Math.abs(proj) * 2 : proj)
+          }
+        }
+      }
+    }
+    return any ? Math.max(10, maxSpan + 2) : 200
+  }
+
   private evalExtrude(f: ExtrudeFeature, key: string, ctx: Ctx): FeatureRecord {
     const p = f.params
     const fail = (message: string): FeatureRecord => ({ key, status: { featureId: f.id, ok: false, message }, set: [], removed: [] })
-    const distance = Number(p.distance)
-    if (!Number.isFinite(distance) || distance <= 0) return fail('Enter a distance greater than 0.')
+    const startOffset = Number(p.startOffset === '' || p.startOffset === undefined ? '0' : p.startOffset)
+    if (!Number.isFinite(startOffset)) return fail('Enter a number for the start offset.')
     if (p.profiles.length === 0) return fail('Pick a shape to extrude.')
 
     const picked = this.pickRegions(p.profiles, ctx, ERR_GONE)
     if ('error' in picked) return fail(picked.error)
     const targets = this.pickTargets(p.mode, p.targets, ctx)
     if ('error' in targets) return fail(targets.error)
+
+    let distance = Number(p.distance)
+    if (p.extent === 'throughAll') {
+      const spanTargets = targets.targets.length > 0 ? targets.targets : ctx.bodies.values()
+      distance = this.throughAllDistance(spanTargets, picked.sketch.frame, startOffset, p.direction)
+    } else if (!Number.isFinite(distance) || distance <= 0) {
+      return fail('Enter a distance greater than 0.')
+    }
 
     const tool = buildExtrusion({
       extrudeId: f.id,
@@ -536,6 +607,7 @@ export class Regenerator {
       frame: picked.sketch.frame,
       distance,
       direction: p.direction,
+      startOffset,
     })
     return this.applyTool(f.id, key, p.mode, targets.targets, tool)
   }
@@ -740,5 +812,206 @@ export class Regenerator {
       set: [{ name: target.name, key, built: acc }],
       removed: p.keepTools ? [] : tools.map((t) => t.name),
     }
+  }
+
+  // ---- sweep, loft, split, mirror, pattern, import (M5) --------------------------------------
+
+  private evalSweep(f: SweepFeature, key: string, ctx: Ctx): FeatureRecord {
+    const p = f.params
+    const fail = (message: string): FeatureRecord => ({ key, status: { featureId: f.id, ok: false, message }, set: [], removed: [] })
+    if (!p.profile?.name) return fail('Pick a closed shape to sweep.')
+    if (!p.path?.name) return fail('Pick a sketch line or edge path to sweep along.')
+
+    const picked = this.pickRegions([p.profile], ctx, 'The shape this sweep used is gone. Pick a new profile.')
+    if ('error' in picked) return fail(picked.error)
+    const targets = this.pickTargets(p.mode, p.targets, ctx)
+    if ('error' in targets) return fail(targets.error)
+
+    const scope = new Scope()
+    try {
+      const pathEdges: Edge[] = []
+      if (p.path.kind === 'sketchEdge') {
+        const slash = p.path.name.indexOf('/')
+        const skId = slash < 0 ? '' : p.path.name.slice(0, slash)
+        const eid = slash < 0 ? '' : p.path.name.slice(slash + 1)
+        const sk = ctx.done.get(skId)?.sketch
+        const ent = sk?.entities.get(eid) ?? sk?.lines.get(eid)
+        if (!sk || !ent) return fail('The path this sweep used is gone. Pick a new path.')
+        pathEdges.push(scope.track(edgeFromSketchEntity(ent, sk.frame)))
+      } else if (p.path.kind === 'edge') {
+        const r = resolveSubRef(p.path, ctx.bodies.values())
+        if (!r) return fail('The edge path this sweep used is gone. Pick it again.')
+        const [edge] = pickSubShapes(r.body, 'edge', [r.hash], scope) as Edge[]
+        if (!edge) return fail('The edge path this sweep used is gone. Pick it again.')
+        pathEdges.push(edge)
+      } else {
+        return fail('Pick a sketch line, arc, or solid edge as the sweep path.')
+      }
+      const tool = buildSweep(f.id, { region: picked.regions[0], sketch: picked.sketch }, pathEdges)
+      return this.applyTool(f.id, key, p.mode, targets.targets, tool)
+    } finally {
+      scope.free()
+    }
+  }
+
+  private evalLoft(f: LoftFeature, key: string, ctx: Ctx): FeatureRecord {
+    const p = f.params
+    const fail = (message: string): FeatureRecord => ({ key, status: { featureId: f.id, ok: false, message }, set: [], removed: [] })
+    if (p.profiles.length < 2) return fail('Pick at least two closed shapes to loft between.')
+    const sections: { region: Region; sketch: SketchRecord }[] = []
+    for (const ref of p.profiles) {
+      const skId = ref.name.split('/region:')[0]
+      const sk = ctx.done.get(skId)?.sketch
+      const reg = sk?.regions.find((r) => r.name === ref.name)
+      if (!sk || !reg) return fail('A profile this loft used is gone. Pick the profiles again.')
+      sections.push({ region: reg, sketch: sk })
+    }
+    const targets = this.pickTargets(p.mode, p.targets, ctx)
+    if ('error' in targets) return fail(targets.error)
+    const tool = buildLoft(f.id, sections)
+    return this.applyTool(f.id, key, p.mode, targets.targets, tool)
+  }
+
+  private evalSplit(f: SplitFeature, key: string, ctx: Ctx): FeatureRecord {
+    const fail = (message: string): FeatureRecord => ({ key, status: { featureId: f.id, ok: false, message }, set: [], removed: [] })
+    if (!f.params.body?.name) return fail('Pick a solid to split.')
+    if (!f.params.plane?.name) return fail('Pick a plane or flat face to split with.')
+    const body = resolveBodyRef(f.params.body, ctx.bodies)
+    if (!body) return fail(ERR_BODY_GONE)
+    const plane = this.frameOf(f.params.plane, ctx, 'plane')
+    if ('error' in plane) return fail(plane.error)
+    const { kept, splitOff } = splitBody(f.id, body.built, plane.frame)
+    return {
+      key,
+      status: { featureId: f.id, ok: true, ...(plane.warning ? { warning: plane.warning } : {}) },
+      set: [
+        { name: body.name, key, built: kept },
+        { name: `${f.id}:1`, key, built: splitOff },
+      ],
+      removed: [],
+    }
+  }
+
+  private evalMirror(f: MirrorFeature, key: string, ctx: Ctx): FeatureRecord {
+    const p = f.params
+    const fail = (message: string): FeatureRecord => ({ key, status: { featureId: f.id, ok: false, message }, set: [], removed: [] })
+    if (p.bodies.length === 0) return fail('Pick at least one solid to mirror.')
+    if (!p.plane?.name) return fail('Pick a plane or flat face to mirror across.')
+    const bodies: BodyRecord[] = []
+    for (const ref of p.bodies) {
+      const b = resolveBodyRef(ref, ctx.bodies)
+      if (!b) return fail(ERR_BODY_GONE)
+      if (!bodies.includes(b)) bodies.push(b)
+    }
+    const plane = this.frameOf(p.plane, ctx, 'plane')
+    if ('error' in plane) return fail(plane.error)
+    const set: BodyRecord[] = []
+    try {
+      bodies.forEach((b, i) => {
+        const name = p.merge ? b.name : `${f.id}:${i + 1}`
+        const prefix = p.merge ? '' : `${name}/`
+        set.push({ name, key, built: mirrorBody(f.id, b.built, plane.frame, p.merge, prefix) })
+      })
+    } catch (err) {
+      for (const s of set) discard(s.built)
+      throw err
+    }
+    return { key, status: { featureId: f.id, ok: true, ...(plane.warning ? { warning: plane.warning } : {}) }, set, removed: [] }
+  }
+
+  private resolvePatternAxis(axis: Ref, ctx: Ctx): { point: Vec3; dir: Vec3 } | { error: string } {
+    if (axis.kind === 'originAxis') {
+      const dir = ({ X: [1, 0, 0], Y: [0, 1, 0], Z: [0, 0, 1] } as Record<string, Vec3>)[axis.name]
+      if (!dir) return { error: 'Pick a valid axis or direction.' }
+      return { point: [0, 0, 0], dir }
+    }
+    if (axis.kind === 'sketchEdge') {
+      const slash = axis.name.indexOf('/')
+      const sk = slash < 0 ? undefined : ctx.done.get(axis.name.slice(0, slash))?.sketch
+      const line = sk?.lines.get(axis.name.slice(slash + 1))
+      if (!sk || !line) return { error: 'The axis line this pattern used is gone.' }
+      const p0 = localToWorld(sk.frame, line.a)
+      const p1 = localToWorld(sk.frame, line.b)
+      const d = subVec(p1, p0)
+      const len = Math.hypot(...d)
+      if (len < 1e-9) return { error: 'The axis line has zero length.' }
+      return { point: p0, dir: [d[0] / len, d[1] / len, d[2] / len] }
+    }
+    if (axis.kind === 'face' || axis.kind === 'constructionPlane' || axis.kind === 'originPlane') {
+      const pl = this.frameOf(axis, ctx, 'plane')
+      if ('error' in pl) return pl
+      return { point: pl.frame.origin, dir: pl.frame.normal }
+    }
+    if (axis.kind === 'edge') {
+      const r = resolveSubRef(axis, ctx.bodies.values())
+      if (!r) return { error: 'The edge this pattern used is gone.' }
+      const scope = new Scope()
+      try {
+        const [edge] = pickSubShapes(r.body, 'edge', [r.hash], scope) as Edge[]
+        if (!edge) return { error: 'The edge this pattern used is gone.' }
+        const p0 = edge.pointAt(0)
+        const p1 = edge.pointAt(1)
+        const a = p0.toTuple()
+        const b = p1.toTuple()
+        p0.delete()
+        p1.delete()
+        const d = subVec(b, a)
+        const len = Math.hypot(...d)
+        if (len < 1e-9) return { error: 'The picked edge has zero length.' }
+        return { point: a, dir: [d[0] / len, d[1] / len, d[2] / len] }
+      } finally {
+        scope.free()
+      }
+    }
+    return { error: 'Pick an axis, edge, or flat face.' }
+  }
+
+  private evalPattern(f: PatternFeature, key: string, ctx: Ctx): FeatureRecord {
+    const p = f.params
+    const fail = (message: string): FeatureRecord => ({ key, status: { featureId: f.id, ok: false, message }, set: [], removed: [] })
+    if (p.bodies.length === 0) return fail('Pick at least one solid to pattern.')
+    if (!p.axis?.name) return fail('Pick a direction axis for this pattern.')
+    const rawCount = Number(p.count)
+    if (!Number.isFinite(rawCount) || rawCount < 2 || rawCount > 50) return fail('Enter a copy count between 2 and 50.')
+    const count = Math.round(rawCount)
+    const spacing = Number(p.spacing)
+    if (!Number.isFinite(spacing) || spacing === 0) {
+      return fail(p.kind === 'circular' ? 'Enter a non-zero step angle.' : 'Enter a non-zero spacing.')
+    }
+    const bodies: BodyRecord[] = []
+    for (const ref of p.bodies) {
+      const b = resolveBodyRef(ref, ctx.bodies)
+      if (!b) return fail(ERR_BODY_GONE)
+      if (!bodies.includes(b)) bodies.push(b)
+    }
+    const ax = this.resolvePatternAxis(p.axis, ctx)
+    if ('error' in ax) return fail(ax.error)
+
+    const set: BodyRecord[] = []
+    try {
+      for (let k = 1; k < count; k++) {
+        bodies.forEach((b, i) => {
+          const idx = (k - 1) * bodies.length + i + 1
+          const name = `${f.id}:${idx}`
+          const spec =
+            p.kind === 'circular'
+              ? { rotate: { axis: ax.dir, pivot: ax.point, angle: (spacing * k * Math.PI) / 180 }, translate: [0, 0, 0] as Vec3 }
+              : {
+                  rotate: null,
+                  translate: [ax.dir[0] * spacing * k, ax.dir[1] * spacing * k, ax.dir[2] * spacing * k] as Vec3,
+                }
+          set.push({ name, key, built: transformBody(b.built, spec, `${name}/`) })
+        })
+      }
+    } catch (err) {
+      for (const s of set) discard(s.built)
+      throw err
+    }
+    return { key, status: { featureId: f.id, ok: true }, set, removed: [] }
+  }
+
+  private evalImport(f: ImportFeature, key: string): FeatureRecord {
+    const built = importStepBody(f.id, f.params.content)
+    return { key, status: { featureId: f.id, ok: true }, set: [{ name: f.id, key, built }], removed: [] }
   }
 }

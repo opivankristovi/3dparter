@@ -3,6 +3,7 @@ import { Route, Router, Switch } from 'wouter'
 import { useHashLocation } from 'wouter/use-hash-location'
 import { DesignPage } from '../design/DesignPage'
 import { Dashboard } from '../screens/Dashboard'
+import { Landing } from '../screens/Landing'
 import { Login } from '../screens/Login'
 import { NotFound } from '../screens/NotFound'
 import { WorkspaceRoute } from '../screens/Workspace'
@@ -28,6 +29,7 @@ export function App() {
               <Route path="/p/:id" component={WorkspaceRoute} />
               <Route path="/design" component={DesignPage} />
               <Route path="/login" component={Login} />
+              <Route path="/welcome" component={Landing} />
               <Route>
                 <NotFound />
               </Route>

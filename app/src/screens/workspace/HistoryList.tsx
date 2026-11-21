@@ -214,6 +214,7 @@ export function HistoryList({ statuses, icons }: HistoryTabProps) {
         if (!started) {
           if (Math.hypot(ev.clientX - sx, ev.clientY - sy) < DRAG_START) return
           started = true
+          setMenuId(null)
           setDragId(id)
           window.getSelection()?.removeAllRanges()
           stopScroll = autoScroll(wrapRef.current, () => y, refresh)
@@ -250,6 +251,7 @@ export function HistoryList({ statuses, icons }: HistoryTabProps) {
     if (e.pointerType === 'touch' && !grip) return
     if (!grip && t.closest('button')) return
     startRowDrag(row.dataset.treeId!, e)
+    if (grip) e.stopPropagation()
   }
 
   // ---- dragging and keying the marker -------------------------------------------------------------------
@@ -265,6 +267,7 @@ export function HistoryList({ statuses, icons }: HistoryTabProps) {
   }
   const onMarkerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
     if (e.button !== 0) return
+    e.stopPropagation()
     e.currentTarget.setPointerCapture(e.pointerId)
     const grab = e.clientY - e.currentTarget.getBoundingClientRect().top
     const g = { pointerId: e.pointerId, grab, lastY: e.clientY, stop: () => {} }
@@ -386,14 +389,22 @@ export function HistoryList({ statuses, icons }: HistoryTabProps) {
   const markerText =
     shown >= n ? 'After the last step: every step is shown' : shown === 0 ? 'Before the first step' : `After ${features[shown - 1].name}`
 
+  const pickMenuRow = (target: EventTarget | null) => {
+    const el = target as HTMLElement | null
+    if (!el || el.closest('[data-grip], [role="slider"], button, input')) {
+      setMenuId(null)
+      return
+    }
+    const row = el.closest<HTMLElement>('[data-tree-id]')
+    setMenuId(row?.dataset.treeId ?? null)
+  }
+
   return (
     <>
-      <ContextMenu items={rowItems(menuId)}>
+      <ContextMenu items={dragId ? [] : rowItems(menuId)}>
         <div
-          onContextMenuCapture={(e) => {
-            const row = (e.target as HTMLElement).closest<HTMLElement>('[data-tree-id]')
-            setMenuId(row?.dataset.treeId ?? null)
-          }}
+          onPointerDownCapture={(e) => pickMenuRow(e.target)}
+          onContextMenuCapture={(e) => pickMenuRow(e.target)}
         >
           <div
             ref={wrapRef}

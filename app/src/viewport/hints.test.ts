@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { edgeHint, edgeSegments, faceHint, nearestOnEdge2D, nearestOnSegment2D } from './hints'
+import { edgeHint, edgeSegments, extractVerticesFromEdges, faceHint, nearestOnEdge2D, nearestOnSegment2D, segIntersectsRect2D } from './hints'
 
 // A 4 x 2 rectangle in the plane z = 3, two triangles wound counter-clockwise seen from +z.
 const quadPos = [0, 0, 3, 4, 0, 3, 4, 2, 3, 0, 2, 3]
@@ -113,5 +113,26 @@ describe('screen distance', () => {
     expect(best?.segment).toBe(1)
     expect(best?.distance).toBeCloseTo(1)
     expect(nearestOnEdge2D(0, 0, [])).toBeNull()
+  })
+})
+
+describe('M4 vertex extraction and box intersection', () => {
+  it('extracts deduplicated, deterministically ordered vertices from edge polylines', () => {
+    const verts = extractVerticesFromEdges('b1', [
+      { name: 'e1', points: new Float32Array([10, 0, 0, 0, 0, 0]) },
+      { name: 'e2', points: new Float32Array([0, 0, 0, 0, 5, 0]) },
+      { name: 'e3', points: new Float32Array([0, 5, 0, 10, 0, 0]) },
+    ])
+    expect(verts).toEqual([
+      { name: 'b1/vertex:1', point: [0, 0, 0] },
+      { name: 'b1/vertex:2', point: [0, 5, 0] },
+      { name: 'b1/vertex:3', point: [10, 0, 0] },
+    ])
+  })
+
+  it('detects segments inside or crossing a 2D rectangle', () => {
+    expect(segIntersectsRect2D(2, 2, 4, 4, 0, 0, 10, 10)).toBe(true) // inside
+    expect(segIntersectsRect2D(-5, 5, 15, 5, 0, 0, 10, 10)).toBe(true) // crosses with both endpoints outside
+    expect(segIntersectsRect2D(-5, 15, 15, 15, 0, 0, 10, 10)).toBe(false) // completely outside
   })
 })

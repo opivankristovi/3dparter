@@ -1,7 +1,10 @@
-// Tool state that is NOT part of the document: the live draft of a feature being edited, and the sketch in use.
-// The draft is previewed by the kernel but never written to the document until Apply (one undo step).
+// Tool state that is NOT part of the document: the live draft of a feature being edited, the sketch in use,
+// and transient viewport display toggles.
 import { create } from 'zustand'
 import type { Feature, PlaneFrame } from '../../doc/types'
+
+export type SelectionFilter = 'all' | 'body' | 'face' | 'edge' | 'vertex'
+export type DisplayMode = 'shaded' | 'wireframe'
 
 interface ToolState {
   /** The feature being previewed (a new one, or an edited copy of an existing one). */
@@ -14,12 +17,21 @@ interface ToolState {
   liveBodies: string[] | null
   /** Resolved plane frames for sketch features (for sketches on flat faces or construction planes). */
   sketchFrames: Record<string, PlaneFrame>
+  /** Viewport picking filter when no modeling tool overrides it. */
+  selectionFilter: SelectionFilter
+  /** Whether a live section clipping plane is active in the viewport. */
+  sectionView: boolean
+  /** Viewport solid shading mode. */
+  displayMode: DisplayMode
   setDraft(draft: Feature, replaces?: string | null): void
   clearDraft(): void
   setActiveSketch(id: string | null): void
   setLiveBodies(ids: string[] | null): void
   setSketchFrames(frames: Record<string, PlaneFrame>): void
   setSketchFrame(id: string, frame: PlaneFrame): void
+  setSelectionFilter(filter: SelectionFilter): void
+  setSectionView(enabled: boolean): void
+  setDisplayMode(mode: DisplayMode): void
 }
 
 export const useToolStore = create<ToolState>()((set) => ({
@@ -28,6 +40,9 @@ export const useToolStore = create<ToolState>()((set) => ({
   activeSketchId: null,
   liveBodies: null,
   sketchFrames: {},
+  selectionFilter: 'all',
+  sectionView: false,
+  displayMode: 'shaded',
   setDraft(draft, replaces = null) {
     set({ draft, draftReplaces: replaces })
   },
@@ -45,5 +60,14 @@ export const useToolStore = create<ToolState>()((set) => ({
   },
   setSketchFrame(id, frame) {
     set((s) => ({ sketchFrames: { ...s.sketchFrames, [id]: frame } }))
+  },
+  setSelectionFilter(selectionFilter) {
+    set({ selectionFilter })
+  },
+  setSectionView(sectionView) {
+    set({ sectionView })
+  },
+  setDisplayMode(displayMode) {
+    set({ displayMode })
   },
 }))

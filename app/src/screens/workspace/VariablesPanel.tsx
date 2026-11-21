@@ -3,6 +3,7 @@
 // shown on that field with the typed text kept. Self-contained: mount it as the content of the Variables tab.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Plus, Trash2, Variable as VariableIcon } from 'lucide-react'
+import { useSettings } from '../../app/useSettings'
 import { evalExpr } from '../../doc/expr'
 import { addVariable, deleteVariable, renameVariable, setVariableExpression } from '../../doc/variableCommands'
 import { useProjectStore } from '../../doc/store'
@@ -24,8 +25,8 @@ export function freeVariableName(taken: readonly string[]): string {
 }
 
 /** A value for the row: no float noise, no long tails. */
-export function valueLabel(value: number): string {
-  return String(Number(value.toFixed(4)))
+export function valueLabel(value: number, digits = 2): string {
+  return String(Number(value.toFixed(digits)))
 }
 
 interface RowProps {
@@ -36,9 +37,10 @@ interface RowProps {
   problem: string | undefined
   /** Values of the other variables, to preview what is being typed. */
   scope: ReadonlyMap<string, number>
+  precision: number
 }
 
-function VariableRow({ variable: v, others, problem, scope }: RowProps) {
+function VariableRow({ variable: v, others, problem, scope, precision }: RowProps) {
   const [name, setName] = useState(v.name)
   const [nameError, setNameError] = useState<string>()
   const [exprError, setExprError] = useState<string>()
@@ -74,7 +76,7 @@ function VariableRow({ variable: v, others, problem, scope }: RowProps) {
 
   const check = (text: string): FieldFeedback => {
     const r = evalExpr(text, scope)
-    return r.ok ? { preview: valueLabel(r.value) } : { error: r.message }
+    return r.ok ? { preview: valueLabel(r.value, precision) } : { error: r.message }
   }
 
   return (
@@ -146,6 +148,7 @@ function VariableRow({ variable: v, others, problem, scope }: RowProps) {
 
 export function VariablesPanel() {
   const variables = useProjectStore((s) => s.doc.variables)
+  const precision = useSettings((s) => s.settings.precision)
   const list = useMemo(() => variables ?? [], [variables])
   const ev = useMemo(() => evaluateVariables(list), [list])
   const [addError, setAddError] = useState<string>()
@@ -209,9 +212,10 @@ export function VariablesPanel() {
               <VariableRow
                 key={v.id}
                 variable={v}
-                others={list.filter((x) => x.id !== v.id).map((x) => ({ name: x.name, detail: ev.values.has(x.name) ? valueLabel(ev.values.get(x.name)!) : undefined }))}
+                others={list.filter((x) => x.id !== v.id).map((x) => ({ name: x.name, detail: ev.values.has(x.name) ? valueLabel(ev.values.get(x.name)!, precision) : undefined }))}
                 problem={ev.errors.get(v.id)}
                 scope={ev.values}
+                precision={precision}
               />
             ))}
           </ul>

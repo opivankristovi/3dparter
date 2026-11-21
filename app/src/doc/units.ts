@@ -18,6 +18,18 @@ export function formatDisplay(mm: number, unit: DisplayUnit, digits = 3): string
   return String(Number(toDisplay(mm, unit).toFixed(digits)))
 }
 
+/** Square millimetres as field text in the user's unit squared. */
+export function formatArea(mm2: number, unit: DisplayUnit, digits = 2): string {
+  const k = MM_PER_UNIT[unit]
+  return String(Number((mm2 / (k * k)).toFixed(digits)))
+}
+
+/** Cubic millimetres as field text in the user's unit cubed. */
+export function formatVolume(mm3: number, unit: DisplayUnit, digits = 2): string {
+  const k = MM_PER_UNIT[unit]
+  return String(Number((mm3 / (k * k * k)).toFixed(digits)))
+}
+
 const PLAIN_NUMBER = /^[-+]?(\d+\.?\d*|\.\d+)$/
 
 /** Field text in the user's unit to millimetres, or null if the text is not a plain number. */

@@ -9,9 +9,10 @@ import { Select } from '../../ui/Select'
 import { Switch } from '../../ui/Switch'
 
 export interface ExportOptions {
-  format: 'stl'
+  format: 'stl' | '3mf' | 'step'
   quality: 'high' | 'low'
   binary: boolean
+  onlySelected?: boolean
 }
 
 export interface ExportDialogProps {
@@ -19,6 +20,7 @@ export interface ExportDialogProps {
   onOpenChange: (open: boolean) => void
   onExport: (opts: ExportOptions) => Promise<void>
   bodyCount: number
+  selectedBodyCount?: number
 }
 
 function Field({ title, children }: { title: string; children: ReactNode }) {
@@ -30,27 +32,32 @@ function Field({ title, children }: { title: string; children: ReactNode }) {
   )
 }
 
-/** S11. STL only for now; 3MF and STEP are listed so people know they are coming. */
-export function ExportDialog({ open, onOpenChange, onExport, bodyCount }: ExportDialogProps) {
+/** S11. Exports visible or selected solids as STL, 3MF or STEP. */
+export function ExportDialog({ open, onOpenChange, onExport, bodyCount, selectedBodyCount = 0 }: ExportDialogProps) {
+  const [format, setFormat] = useState<'stl' | '3mf' | 'step'>('stl')
   const [quality, setQuality] = useState<'high' | 'low'>('high')
   const [binary, setBinary] = useState(true)
+  const [onlySelected, setOnlySelected] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | undefined>()
   const closed = useRef(false)
+
+  const hasPartialSelection = selectedBodyCount > 0 && selectedBodyCount < bodyCount
 
   useEffect(() => {
     closed.current = !open
     if (open) {
       setError(undefined)
       setBusy(false)
+      setOnlySelected(selectedBodyCount > 0 && selectedBodyCount < bodyCount)
     }
-  }, [open])
+  }, [open, selectedBodyCount, bodyCount])
 
   const run = async () => {
     setBusy(true)
     setError(undefined)
     try {
-      await onExport({ format: 'stl', quality, binary })
+      await onExport({ format, quality, binary, onlySelected: hasPartialSelection ? onlySelected : false })
       if (!closed.current) onOpenChange(false)
     } catch (e) {
       if (!closed.current) setError(e instanceof Error ? e.message : 'Export failed. Try again.')
@@ -89,29 +96,46 @@ export function ExportDialog({ open, onOpenChange, onExport, bodyCount }: Export
           <Field title="Format">
             <Select
               label="Format"
-              value="stl"
-              onValueChange={() => {}}
+              value={format}
+              onValueChange={(v) => setFormat(v as 'stl' | '3mf' | 'step')}
               options={[
                 { value: 'stl', label: 'STL' },
-                { value: '3mf', label: '3MF (coming soon)', disabled: true },
-                { value: 'step', label: 'STEP (coming soon)', disabled: true },
+                { value: '3mf', label: '3MF' },
+                { value: 'step', label: 'STEP' },
               ]}
             />
           </Field>
-          <Field title="Quality">
-            <SegmentedControl
-              label="Quality"
-              value={quality}
-              onValueChange={(v) => setQuality(v as 'high' | 'low')}
-              options={[
-                { value: 'high', label: 'High' },
-                { value: 'low', label: 'Low' },
-              ]}
-            />
-          </Field>
-          <Field title="File type">
-            <Switch label="Binary (smaller file)" checked={binary} onCheckedChange={setBinary} />
-          </Field>
+          {hasPartialSelection ? (
+            <Field title="Solids">
+              <SegmentedControl
+                label="Solids"
+                value={onlySelected ? 'selected' : 'all'}
+                onValueChange={(v) => setOnlySelected(v === 'selected')}
+                options={[
+                  { value: 'selected', label: `Selected (${selectedBodyCount})` },
+                  { value: 'all', label: `All visible (${bodyCount})` },
+                ]}
+              />
+            </Field>
+          ) : null}
+          {format === 'stl' || format === '3mf' ? (
+            <Field title="Quality">
+              <SegmentedControl
+                label="Quality"
+                value={quality}
+                onValueChange={(v) => setQuality(v as 'high' | 'low')}
+                options={[
+                  { value: 'high', label: 'High' },
+                  { value: 'low', label: 'Low' },
+                ]}
+              />
+            </Field>
+          ) : null}
+          {format === 'stl' ? (
+            <Field title="File type">
+              <Switch label="Binary (smaller file)" checked={binary} onCheckedChange={setBinary} />
+            </Field>
+          ) : null}
         </div>
       )}
     </Dialog>

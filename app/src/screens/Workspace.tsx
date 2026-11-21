@@ -3,8 +3,11 @@ import type { ReactNode } from 'react'
 import { useLocation, useParams } from 'wouter'
 import { Ellipsis, Moon, PanelRight, Sun } from 'lucide-react'
 import { useIsDark, useSettings } from '../app/useSettings'
+import { exportProjectJson } from '../data/projectFile'
 import { createProject } from '../data/projects'
+import { addFeature, newId, nextFeatureName } from '../doc/commands'
 import { useProjectStore } from '../doc/store'
+import type { ImportFeature } from '../doc/types'
 import { addDimension, applyConstraint, setAutoConstraints, toggleConstructionOfSelection } from '../sketch/actions'
 import { useSketchUi } from '../sketch/sketchUi'
 import { Button } from '../ui/Button'
@@ -13,12 +16,14 @@ import type { Command } from '../ui/CommandPalette'
 import { DropdownMenu } from '../ui/DropdownMenu'
 import { IconButton } from '../ui/IconButton'
 import { ProgressIndicator } from '../ui/ProgressIndicator'
+import { ShortcutSheetDialog } from '../ui/ShortcutSheetDialog'
 import { SidebarPanel } from '../ui/SidebarPanel'
 import { TopBar } from '../ui/TopBar'
 import { cn } from '../ui/cn'
 import type { ViewportEngine } from '../viewport/engine'
 import { ExportDialog } from './dialogs/ExportDialog'
 import type { ExportOptions } from './dialogs/ExportDialog'
+import { ImportDialog } from './dialogs/ImportDialog'
 import { SettingsDialog } from './dialogs/SettingsDialog'
 import { NotFound } from './NotFound'
 import { SaveChip } from './workspace/SaveChip'
@@ -28,8 +33,9 @@ import { VariablesPanel } from './workspace/VariablesPanel'
 import { ViewColumn } from './workspace/ViewColumn'
 import type { FeatureStatuses } from './workspace/SidebarTabs'
 import { useToolStore } from './workspace/toolStore'
+import type { SelectionFilter } from './workspace/toolStore'
 import { ALL_TOOLS, TOOL_KEYS, WorkspaceToolRail } from './workspace/WorkspaceToolRail'
-import { useBreakpoints, useSaveOnLeave, useWorkspaceHotkeys } from './workspace/hooks'
+import { isTypingTarget, useBreakpoints, useSaveOnLeave, useWorkspaceHotkeys } from './workspace/hooks'
 import { useCoverInsets } from './workspace/useCoverInsets'
 
 export interface WorkspaceProps {
@@ -122,7 +128,18 @@ function Shell({
   const canUndo = useProjectStore((s) => s.canUndo)
   const canRedo = useProjectStore((s) => s.canRedo)
   const activeTool = useProjectStore((s) => s.activeTool)
-  const bodyCount = useProjectStore((s) => Object.values(s.doc.bodies).filter((b) => b.visible).length)
+  const selection = useProjectStore((s) => s.selection)
+  const docBodies = useProjectStore((s) => s.doc.bodies)
+  const liveBodies = useToolStore((s) => s.liveBodies)
+  const visibleLiveBodyIds = useMemo(
+    () => new Set(Object.entries(docBodies).filter(([id, b]) => b.visible && (liveBodies === null || liveBodies.includes(id))).map(([id]) => id)),
+    [docBodies, liveBodies],
+  )
+  const bodyCount = visibleLiveBodyIds.size
+  const selectedBodyCount = useMemo(
+    () => new Set(selection.filter((r) => r.kind === 'body' && visibleLiveBodyIds.has(r.name)).map((r) => r.name)).size,
+    [selection, visibleLiveBodyIds],
+  )
   const rename = useProjectStore((s) => s.rename)
   const undo = useProjectStore((s) => s.undo)
   const redo = useProjectStore((s) => s.redo)
@@ -137,13 +154,28 @@ function Shell({
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
 
   useWorkspaceHotkeys(TOOL_KEYS)
   useSaveOnLeave()
   useCommandPaletteHotkey(() => setPaletteOpen(true))
   useCoverInsets(view?.engine ?? null)
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented || isTypingTarget(e.target)) return
+      if (document.querySelector('[role="dialog"][data-state="open"]')) return
+      if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        e.preventDefault()
+        setShortcutsOpen(true)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
 
   const commands: Command[] = useMemo(
     () => [
@@ -177,7 +209,51 @@ function Shell({
             },
           ]
         : []),
-      { id: 'export', label: 'Export STL', group: 'File', onRun: () => setExportOpen(true) },
+      { id: 'measure', label: 'Measure', group: 'Inspect', shortcut: 'U', onRun: () => useProjectStore.getState().setActiveTool(useProjectStore.getState().activeTool === 'measure' ? null : 'measure') },
+      ...(
+        [
+          ['all', 'Filter: All'],
+          ['body', 'Filter: Solids'],
+          ['face', 'Filter: Faces'],
+          ['edge', 'Filter: Edges'],
+          ['vertex', 'Filter: Points'],
+        ] as [SelectionFilter, string][]
+      ).map(([filter, label]) => ({
+        id: `filter.${filter}`,
+        label,
+        group: 'Selection',
+        onRun: () => useToolStore.getState().setSelectionFilter(filter),
+      })),
+      { id: 'import', label: 'Import STEP', group: 'File', onRun: () => setImportOpen(true) },
+      { id: 'export', label: 'Export (STL / 3MF / STEP)', group: 'File', onRun: () => setExportOpen(true) },
+      {
+        id: 'export.project',
+        label: 'Export project (.3dparter.json)',
+        group: 'File',
+        onRun: () => {
+          const s = useProjectStore.getState()
+          exportProjectJson(s.name, s.doc)
+        },
+      },
+      {
+        id: 'view.section',
+        label: 'Toggle section view',
+        group: 'View',
+        onRun: () => {
+          const ts = useToolStore.getState()
+          ts.setSectionView(!ts.sectionView)
+        },
+      },
+      {
+        id: 'view.wireframe',
+        label: 'Toggle wireframe',
+        group: 'View',
+        onRun: () => {
+          const ts = useToolStore.getState()
+          ts.setDisplayMode(ts.displayMode === 'wireframe' ? 'shaded' : 'wireframe')
+        },
+      },
+      { id: 'shortcuts', label: 'Keyboard shortcuts', group: 'Help', shortcut: '?', onRun: () => setShortcutsOpen(true) },
       { id: 'theme', label: 'Toggle theme', group: 'View', onRun: () => useSettings.getState().toggleTheme() },
     ],
     [goHome, navigate, sketching, autoOn],
@@ -224,13 +300,15 @@ function Shell({
           onBack={goHome}
           onUndo={undo}
           onRedo={redo}
+          measureActive={activeTool === 'measure'}
+          onMeasure={() => setActiveTool(activeTool === 'measure' ? null : 'measure')}
+          onImport={() => setImportOpen(true)}
           onExport={() => setExportOpen(true)}
           onSettings={() => setSettingsOpen(true)}
           onThemeToggle={toggleTheme}
           themeIcon={dark ? <Sun size={20} strokeWidth={1.75} /> : <Moon size={20} strokeWidth={1.75} />}
           saveSlot={<SaveChip state={saveState} />}
           busy={busy}
-          hideMeasure
           compact={!tablet}
           actions={
             desktop ? undefined : tablet ? (
@@ -244,6 +322,9 @@ function Shell({
                 trigger={<IconButton label="More" icon={<Ellipsis size={20} strokeWidth={1.75} />} />}
                 items={[
                   { label: drawerOpen ? 'Hide panel' : 'Show panel', onSelect: () => setDrawerOpen((o) => !o) },
+                  { label: activeTool === 'measure' ? 'Close Measure' : 'Measure', onSelect: () => setActiveTool(activeTool === 'measure' ? null : 'measure') },
+                  { label: 'Import STEP', onSelect: () => setImportOpen(true) },
+                  { label: 'Keyboard shortcuts', onSelect: () => setShortcutsOpen(true) },
                   { label: 'Settings', onSelect: () => setSettingsOpen(true) },
                   { label: dark ? 'Light theme' : 'Dark theme', onSelect: toggleTheme },
                 ]}
@@ -346,6 +427,7 @@ function Shell({
         open={exportOpen}
         onOpenChange={setExportOpen}
         bodyCount={bodyCount}
+        selectedBodyCount={selectedBodyCount}
         onExport={
           onExport ??
           (async () => {
@@ -353,7 +435,25 @@ function Shell({
           })
         }
       />
+      <ImportDialog
+        open={importOpen}
+        onOpenChange={setImportOpen}
+        onImport={(filename, content) => {
+          const doc = useProjectStore.getState().doc
+          const cleanName = filename.replace(/\.[^.]+$/, '').trim()
+          const f: ImportFeature = {
+            id: newId(),
+            type: 'import',
+            name: cleanName || nextFeatureName(doc, 'import'),
+            suppressed: false,
+            params: { filename, format: 'step', content },
+          }
+          addFeature(f, 'Import STEP')
+          useProjectStore.getState().setSelection([{ kind: 'body', name: f.id }])
+        }}
+      />
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
+      <ShortcutSheetDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} commands={commands} />
     </div>
   )

@@ -2,6 +2,7 @@
 // size fields. The shape is only built on commit, and goes through automatic constraints into one undo step.
 import { useEffect, useReducer, useRef } from 'react'
 import type { KeyboardEvent as ReactKeyboardEvent, MutableRefObject, ReactElement, RefObject } from 'react'
+import { useSettings } from '../app/useSettings'
 import { useProjectStore } from '../doc/store'
 import type { DisplayUnit, PlaneFrame, Vec2 } from '../doc/types'
 import { formatDisplay, parseDisplay } from '../doc/units'
@@ -41,6 +42,8 @@ interface Work {
   fixedB: number | null
   typedA: string
   typedB: string
+  lastA: string
+  lastB: string
   editing: boolean
 }
 
@@ -57,6 +60,8 @@ const fresh = (cursor: Vec2 | null = null): Work => ({
   fixedB: null,
   typedA: '',
   typedB: '',
+  lastA: '0',
+  lastB: '0',
   editing: false,
 })
 
@@ -65,6 +70,10 @@ export const TOOL_OF: Record<string, Tool> = {
   'sketch.circle': 'circle',
   'sketch.line': 'line',
   'sketch.arc': 'arc',
+  'sketch.polygon': 'polygon',
+  'sketch.slot': 'slot',
+  'sketch.ellipse': 'ellipse',
+  'sketch.spline': 'spline',
 }
 
 const LABELS: Record<Tool, [string, string?]> = {
@@ -72,8 +81,23 @@ const LABELS: Record<Tool, [string, string?]> = {
   circle: ['Diameter'],
   line: ['Length'],
   arc: ['Radius'],
+  polygon: ['Diameter'],
+  slot: ['Length', 'Width'],
+  ellipse: ['Width', 'Height'],
+  spline: ['Length'],
 }
-const NAMES: Record<Tool, string> = { rectangle: 'Rectangle', circle: 'Circle', line: 'Line', arc: 'Arc' }
+const NAMES: Record<Tool, string> = {
+  rectangle: 'Rectangle',
+  circle: 'Circle',
+  line: 'Line',
+  arc: 'Arc',
+  polygon: 'Polygon',
+  slot: 'Slot',
+  ellipse: 'Ellipse',
+  spline: 'Spline',
+}
+const NEEDS_SECOND = (t: Tool | null | undefined) => t === 'arc' || t === 'spline'
+const HAS_TWO_FIELDS = (t: Tool) => t === 'rectangle' || t === 'slot' || t === 'ellipse'
 
 export interface DrawTool {
   /** The typed-size panel, or null when no shape is in progress. */
@@ -84,6 +108,7 @@ export interface DrawTool {
 
 export function useDrawTool(engine: ViewportEngine, live: MutableRefObject<LiveRefs>, root: RefObject<HTMLDivElement | null>): DrawTool {
   const [, rerender] = useReducer((n: number) => n + 1, 0)
+  const precision = useSettings((s) => s.settings.precision)
   const work = useRef<Work>(fresh())
   const panel = useRef<HTMLDivElement>(null)
   const commitRef = useRef<(shape: Shape, tl: Tool) => void>(() => {})
@@ -213,7 +238,7 @@ export function useDrawTool(engine: ViewportEngine, live: MutableRefObject<LiveR
         rerender()
         return
       }
-      if (tl === 'arc' && !w.second) {
+      if (NEEDS_SECOND(tl) && !w.second) {
         if (samePoint(c.point, w.anchor)) return
         w.second = c.point
         refreshPreview()
@@ -247,7 +272,7 @@ export function useDrawTool(engine: ViewportEngine, live: MutableRefObject<LiveR
       const w = work.current
       const typing = isTypingTarget(e.target)
       const inPanel = e.target instanceof Node && !!panel.current?.contains(e.target)
-      const sizing = w.anchor !== null && (tl !== 'arc' || w.second !== null)
+      const sizing = w.anchor !== null && (!NEEDS_SECOND(tl) || w.second !== null)
 
       if (e.key === 'Escape') {
         if (w.anchor) {
@@ -293,7 +318,7 @@ export function useDrawTool(engine: ViewportEngine, live: MutableRefObject<LiveR
   // ---- size fields --------------------------------------------------------------------------------
   const w = work.current
   const labels = tool ? LABELS[tool] : null
-  const sizing = !!sketchId && !!tool && !!w.anchor && !!labels && (tool !== 'arc' || w.second !== null)
+  const sizing = !!sketchId && !!tool && !!w.anchor && !!labels && (!NEEDS_SECOND(tool) || w.second !== null)
   if (!sizing || !tool || !labels || !w.anchor) return { panel: null, busy: w.anchor !== null }
   const units = live.current.units
   const shape = w.cursor ? shapeFor(tool, w.anchor, w.cursor, w.fixedA, w.fixedB, w.second) : null
@@ -324,7 +349,7 @@ export function useDrawTool(engine: ViewportEngine, live: MutableRefObject<LiveR
     const idx = inputs.indexOf(e.target) as 0 | 1
     if (!fix(idx, e.target.value)) return
     const cur = work.current
-    const two = tool === 'rectangle'
+    const two = HAS_TWO_FIELDS(tool)
     if (two && idx === 0 && cur.fixedB === null) {
       requestAnimationFrame(() => focusField(1))
       return
@@ -336,8 +361,12 @@ export function useDrawTool(engine: ViewportEngine, live: MutableRefObject<LiveR
     if (cur.cursor && cur.anchor) commitRef.current(shapeFor(tool, cur.anchor, cur.cursor, cur.fixedA, cur.fixedB, cur.second), tool)
   }
 
-  const textA = w.typedA !== '' ? w.typedA : formatDisplay(shape?.dimA ?? 0, units, 2)
-  const textB = w.typedB !== '' ? w.typedB : formatDisplay(shape?.dimB ?? 0, units, 2)
+  if (!w.editing) {
+    w.lastA = formatDisplay(shape?.dimA ?? 0, units, precision)
+    w.lastB = formatDisplay(shape?.dimB ?? 0, units, precision)
+  }
+  const textA = w.typedA !== '' ? w.typedA : w.lastA
+  const textB = w.typedB !== '' ? w.typedB : w.lastB
   const bad = (text: string) => (text.trim() !== '' && parseDisplay(text, units) === null ? 'Enter a number.' : undefined)
 
   return {

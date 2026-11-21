@@ -2,6 +2,7 @@
 // Pure tokens; keyboard-accessible (arrow keys nudge the value).
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent } from 'react'
+import { useSettings } from '../app/useSettings'
 import { evalStored } from '../doc/fieldInput'
 import type { DisplayUnit, Ref, Vec3 } from '../doc/types'
 import { formatDisplay } from '../doc/units'
@@ -91,6 +92,7 @@ function AxisDragHandleInner({
   onChange,
 }: Omit<AxisDragHandleProps, 'engine'> & { engine: ViewportEngine }) {
   useViewSync(engine)
+  const precision = useSettings((s) => s.settings.precision)
 
   const drag = useRef<{
     startX: number
@@ -246,7 +248,7 @@ function AxisDragHandleInner({
         <span aria-hidden="true" className={cn('size-2 rounded-pill', TONE_DOT[tone])} />
         <span className="sr-only">{label} </span>
         <span>
-          {formatDisplay(value, units, 2)} {units}
+          {formatDisplay(value, units, precision)} {units}
         </span>
       </button>
     </div>

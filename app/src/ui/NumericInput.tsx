@@ -1,4 +1,4 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useId, useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent } from 'react'
 import { applySuggestion, suggestNames } from '../doc/fieldInput'
 import type { Candidate } from '../doc/fieldInput'
@@ -77,7 +77,11 @@ export function NumericInput({
   /** Where the caret goes after a suggestion replaced a word. */
   const nextCaret = useRef<number | null>(null)
 
-  useEffect(() => setDraft(value), [value])
+  const [prevValue, setPrevValue] = useState(value)
+  if (value !== prevValue) {
+    setPrevValue(value)
+    setDraft(value)
+  }
   useLayoutEffect(() => {
     if (nextCaret.current === null) return
     input.current?.setSelectionRange(nextCaret.current, nextCaret.current)

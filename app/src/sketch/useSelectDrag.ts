@@ -5,7 +5,14 @@ import type { MutableRefObject } from 'react'
 import { useProjectStore } from '../doc/store'
 import { isTypingTarget } from '../screens/workspace/hooks'
 import type { ViewportEngine } from '../viewport/engine'
-import { addDimension, applyConstraint, currentSketch, deleteSelected, toggleConstructionOfSelection } from './actions'
+import {
+  addDimension,
+  applyConstraint,
+  currentSketch,
+  deleteSelected,
+  toggleConstructionOfSelection,
+  trimSelection,
+} from './actions'
 import { beginDrag, dragState, endDrag, updateDrag } from './drag'
 import type { DragSession } from './drag'
 import { localToWorld } from './geometry'
@@ -124,6 +131,10 @@ export function useSelectDrag(engine: ViewportEngine, live: MutableRefObject<Liv
         e.preventDefault()
         e.stopPropagation()
         toggleConstructionOfSelection()
+      } else if (key === 't') {
+        e.preventDefault()
+        e.stopPropagation()
+        trimSelection()
       }
     }
 

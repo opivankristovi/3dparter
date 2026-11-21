@@ -43,7 +43,7 @@ export function ToolButton({
         onClick={onClick}
         className={cn(
           'relative flex rounded-md transition-colors duration-(--motion-fast) touch:min-h-12 touch:min-w-12 disabled:cursor-not-allowed disabled:text-text-disabled',
-          row ? 'w-full flex-row items-center gap-1 py-0.5 pr-2 pl-1' : 'w-12 flex-col items-center py-0.5',
+          row ? 'w-full flex-row items-center gap-1 py-0.5 pr-2 pl-1' : 'w-12 shrink-0 flex-col items-center py-0.5',
           active
             ? 'bg-accent-subtle text-accent before:absolute before:inset-y-1.5 before:-left-1 before:w-0.5 before:rounded-pill before:bg-accent'
             : 'text-text-muted enabled:hover:bg-surface-sunken enabled:hover:text-text',

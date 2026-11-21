@@ -1,5 +1,5 @@
 // The Extrude tool: picks a profile, previews the solid through a draft feature, and applies it as one undo step.
-import { useCallback, useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { ArrowUpFromLine } from 'lucide-react'
 import { newId, nextFeatureName } from '../doc/commands'
@@ -10,7 +10,7 @@ import type { BodyAppearance, BooleanMode, DisplayUnit, ExtrudeFeature, OriginPl
 import { toExpr } from '../doc/units'
 import { getKernel } from '../kernel/client'
 import type { MeshData, SketchRegionData } from '../kernel/api'
-import { applyDraft, cancelDraft, changeDraft, useLengthInput } from '../modeling/draft'
+import { applyDraft, cancelDraft, changeDraft, useLengthInput, useSignedLengthInput } from '../modeling/draft'
 import { MODE_WORDS, cutDirection, meshVolume, sameSketchRegions, sameVolume, sketchOfRegion } from '../modeling/logic'
 import { AxisDragHandle } from '../modeling/ModelHandles'
 import { extrudeTargetPool } from '../modeling/picking'
@@ -186,8 +186,14 @@ export function useExtrudeTool(kernel: KernelState, engine: ViewportEngine | nul
     const n = frame.normal
     const dir: Vec3 = extrude.params.direction === -1 ? [-n[0], -n[1], -n[2]] : n
     const dist = evalStored(extrude.params.distance) ?? NaN
+    const startMm = evalStored(extrude.params.startOffset ?? '0') ?? 0
+    const base = regionCenter(reg)
+    const origin: Vec3 =
+      Number.isFinite(startMm) && startMm !== 0
+        ? [base[0] + n[0] * startMm, base[1] + n[1] * startMm, base[2] + n[2] * startMm]
+        : base
     return {
-      origin: regionCenter(reg),
+      origin,
       dir,
       distance: Number.isFinite(dist) && dist > 0 ? dist : 10,
       scale: extrude.params.direction === 0 ? 0.5 : 1,
@@ -195,7 +201,7 @@ export function useExtrudeTool(kernel: KernelState, engine: ViewportEngine | nul
   }, [extrude, features, sketchFrames, kernel.regions])
 
   const handle =
-    extrude && handleInfo ? (
+    extrude && handleInfo && (extrude.params.extent ?? 'distance') !== 'throughAll' ? (
       <AxisDragHandle
         engine={engine}
         origin={handleInfo.origin}
@@ -249,7 +255,17 @@ interface CardProps {
 
 function ExtrudeCard({ draft, bodies, units, busy, isCurrent, failure, noEffect, editingStep, onChange, onApply, onCancel }: CardProps) {
   const p = draft.params
+  const extent = p.extent ?? 'distance'
   const length = useLengthInput(p.distance, units, (distance) => onChange({ distance }))
+  const offset = useSignedLengthInput(p.startOffset ?? '0', units, (startOffset) => onChange({ startOffset }))
+  const [hasOffset, setHasOffset] = useState(() => !!(p.startOffset && p.startOffset !== '0'))
+  const lastDraftId = useRef(draft.id)
+  useEffect(() => {
+    if (lastDraftId.current !== draft.id) {
+      lastDraftId.current = draft.id
+      setHasOffset(!!(p.startOffset && p.startOffset !== '0'))
+    }
+  }, [draft.id, p.startOffset])
   const noProfile = p.profiles.length === 0
   /** The direction was flipped by the card (not by the user) when the operation became Cut or Intersect. */
   const autoFlipped = useRef(false)
@@ -264,6 +280,7 @@ function ExtrudeCard({ draft, bodies, units, busy, isCurrent, failure, noEffect,
       ? 'This cut does not reach the solid. Try Flip.'
       : 'The result is the same solid. Try Flip or another distance.'
     : undefined
+  const applyAction = extent === 'throughAll' ? onApply : length.guard(onApply)
 
   return (
     <ParameterCard
@@ -273,11 +290,40 @@ function ExtrudeCard({ draft, bodies, units, busy, isCurrent, failure, noEffect,
       isCurrent={isCurrent}
       editingStep={editingStep}
       failure={missing ? { message: missing } : failure ? { message: failure } : note ? { message: note } : undefined}
-      applyDisabled={busy || length.invalid || noProfile || noTargets || !!failure || noEffect}
-      onApply={length.guard(onApply)}
+      applyDisabled={
+        busy || (extent === 'distance' && length.invalid) || (hasOffset && offset.invalid) || noProfile || noTargets || !!failure || noEffect
+      }
+      onApply={hasOffset ? offset.guard(applyAction) : applyAction}
       onCancel={onCancel}
     >
-      <NumericInput label="Distance" {...length.field} />
+      <NumericInput label="Distance" disabled={extent === 'throughAll'} {...length.field} />
+      <ParameterRow label="Extent">
+        <SegmentedControl
+          label="Extent"
+          value={extent}
+          onValueChange={(v) => onChange({ extent: v as 'distance' | 'throughAll' })}
+          options={[
+            { value: 'distance', label: 'Distance' },
+            { value: 'throughAll', label: 'Through all' },
+          ]}
+        />
+      </ParameterRow>
+      <ParameterRow label="Start">
+        <SegmentedControl
+          label="Start"
+          value={hasOffset ? 'offset' : 'profile'}
+          onValueChange={(v) => {
+            const next = v === 'offset'
+            setHasOffset(next)
+            onChange({ startOffset: next ? p.startOffset ?? '0' : undefined })
+          }}
+          options={[
+            { value: 'profile', label: 'From profile' },
+            { value: 'offset', label: 'Offset' },
+          ]}
+        />
+      </ParameterRow>
+      {hasOffset ? <NumericInput label="Start offset" {...offset.field} /> : null}
       <ParameterRow label="Direction">
         <SegmentedControl
           label="Direction"

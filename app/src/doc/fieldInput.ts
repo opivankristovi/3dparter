@@ -8,6 +8,7 @@ import { useProjectStore } from './store'
 import type { DisplayUnit } from './types'
 import { formatDisplay } from './units'
 import { scopeOf } from './variables'
+import { useSettings } from '../app/useSettings'
 
 /** What a field accepts besides "a number or an expression". */
 export interface FieldRule {
@@ -23,8 +24,13 @@ export type FieldCheck =
   | { ok: false; message: string }
 
 /** A value as shown next to a field: "25 mm", "0.984 in", "45°". */
-export function valueText(value: number, units: DisplayUnit, kind: FieldKind): string {
-  return kind === 'angle' ? `${Number(value.toFixed(3))}°` : `${formatDisplay(value, units)} ${units}`
+export function valueText(
+  value: number,
+  units: DisplayUnit,
+  kind: FieldKind,
+  digits = useSettings.getState().settings.precision ?? 3,
+): string {
+  return kind === 'angle' ? `${Number(value.toFixed(digits))}°` : `${formatDisplay(value, units, digits)} ${units}`
 }
 
 /** What to say when the field is empty. */
