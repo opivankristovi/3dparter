@@ -48,7 +48,6 @@ export function ToastProvider({ children }: { children: ReactNode }) {
           return (
             <T.Root
               key={t.id}
-              role={variant === 'error' ? 'alert' : 'status'}
               type={variant === 'error' ? 'foreground' : 'background'}
               duration={variant === 'error' ? Infinity : 5000}
               onOpenChange={(open) => {
@@ -62,7 +61,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
               <span aria-hidden="true" className="mt-0.5">
                 {icons[variant]}
               </span>
-              <div className="min-w-0 flex-1">
+              <div role={variant === 'error' ? 'alert' : 'status'} className="min-w-0 flex-1">
                 <T.Title className="text-base font-medium">{t.title}</T.Title>
                 {t.description ? <T.Description className="text-sm opacity-80">{t.description}</T.Description> : null}
               </div>

@@ -28,10 +28,18 @@ import {
 } from './helpers'
 
 async function expectNoA11yViolations(page: Page, name: string) {
+  await page.evaluate(() =>
+    Promise.all(
+      document
+        .getAnimations()
+        .filter((a) => Number.isFinite(a.effect?.getComputedTiming().iterations))
+        .map((a) => a.finished.catch(() => {})),
+    ),
+  )
   const results = await new AxeBuilder({ page }).exclude('canvas').analyze()
   const blocking = results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical' || v.impact === 'moderate')
   expect(
-    blocking.map((v) => `${v.id} (${v.impact})`),
+    blocking.map((v) => `${v.id} (${v.impact}): ${v.nodes.map((n) => n.target.join(' ')).join(' | ')}`),
     `axe violations on ${name}`,
   ).toEqual([])
 }
@@ -65,6 +73,7 @@ test.describe('M5 features', () => {
       mimeType: 'application/step',
       buffer: readFileSync(stepPath),
     })
+    await expect(importDialog.getByRole('button', { name: 'Import', exact: true })).toBeEnabled()
     await expectNoA11yViolations(page, 'Import dialog')
     await importDialog.getByRole('button', { name: 'Import', exact: true }).click()
     await expect(importDialog).toBeHidden()

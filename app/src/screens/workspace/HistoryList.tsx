@@ -1,7 +1,7 @@
 // The History list: the steps of the design, the "End of history" marker and everything that moves them.
 // Rows reorder by dragging (mouse, pen, or the grip with a finger), Alt+ArrowUp / Alt+ArrowDown, or the row menu.
 // The marker is a bar between the rows; steps after it are not built and show dimmed.
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent as ReactPointerEvent, ReactNode } from 'react'
 import { History, MoreHorizontal } from 'lucide-react'
 import { deleteFeature, moveFeature, renameFeature, setRollback } from '../../doc/commands'
@@ -112,9 +112,14 @@ export function HistoryList({ statuses, icons }: HistoryTabProps) {
     [toast, announce],
   )
 
-  const focusRow = (id: string) => {
-    requestAnimationFrame(() => wrapRef.current?.querySelector<HTMLElement>(`[data-tree-id="${CSS.escape(id)}"]`)?.focus())
-  }
+  const pendingFocus = useRef<{ id: string; target: 'row' | 'menu' } | null>(null)
+  useLayoutEffect(() => {
+    const pending = pendingFocus.current
+    if (!pending) return
+    pendingFocus.current = null
+    const sel = `[data-tree-id="${CSS.escape(pending.id)}"]${pending.target === 'menu' ? ' [data-row-menu] button' : ''}`
+    wrapRef.current?.querySelector<HTMLElement>(sel)?.focus()
+  }, [features])
 
   const moveTo = useCallback(
     (id: string, toIndex: number, active?: boolean) => {
@@ -127,12 +132,13 @@ export function HistoryList({ statuses, icons }: HistoryTabProps) {
   )
 
   const moveBy = useCallback(
-    (id: string, delta: -1 | 1) => {
-      const from = useProjectStore.getState().doc.features.findIndex((f) => f.id === id)
+    (id: string, delta: -1 | 1, target: 'row' | 'menu' = 'row') => {
+      const before = useProjectStore.getState().doc.features
+      const from = before.findIndex((f) => f.id === id)
       const to = from + delta
-      if (from < 0 || to < 0 || to >= useProjectStore.getState().doc.features.length) return
+      if (from < 0 || to < 0 || to >= before.length) return
       moveTo(id, to)
-      focusRow(id)
+      if (useProjectStore.getState().doc.features !== before) pendingFocus.current = { id, target }
     },
     [moveTo],
   )
@@ -319,14 +325,14 @@ export function HistoryList({ statuses, icons }: HistoryTabProps) {
   // The menu closes itself after an item runs. Changing the list in the same turn moves the row that owns the menu
   // while it is closing, which can leave it open, so the change waits one turn.
   const later = (fn: () => void) => () => void setTimeout(fn, 0)
-  const rowItems = (id: string | null): MenuEntry[] => {
+  const rowItems = (id: string | null, focusTarget: 'row' | 'menu' = 'row'): MenuEntry[] => {
     const idx = features.findIndex((f) => f.id === id)
     if (!id || idx < 0) return []
     return [
       { label: 'Edit', disabled: idx >= committed, onSelect: later(() => open(id)) },
       { type: 'separator' },
-      { label: 'Move up', shortcut: 'Alt+Up', disabled: idx === 0, onSelect: later(() => moveBy(id, -1)) },
-      { label: 'Move down', shortcut: 'Alt+Down', disabled: idx === n - 1, onSelect: later(() => moveBy(id, 1)) },
+      { label: 'Move up', shortcut: 'Alt+Up', disabled: idx === 0, onSelect: later(() => moveBy(id, -1, focusTarget)) },
+      { label: 'Move down', shortcut: 'Alt+Down', disabled: idx === n - 1, onSelect: later(() => moveBy(id, 1, focusTarget)) },
       { label: 'Roll back to here', disabled: committed === idx + 1, onSelect: later(() => rollBackTo(idx)) },
       { type: 'separator' },
       { label: 'Delete', shortcut: 'Del', danger: true, onSelect: later(() => deleteFeature(id)) },
@@ -346,10 +352,10 @@ export function HistoryList({ statuses, icons }: HistoryTabProps) {
       error: st && !st.ok ? (st.message ?? 'This step could not be built.') : undefined,
       warning: st?.ok ? st.warning : undefined,
       trailing: (
-        <span onClick={(e) => e.stopPropagation()} className="flex">
+        <span onClick={(e) => e.stopPropagation()} data-row-menu="" className="flex">
           <DropdownMenu
             align="end"
-            items={rowItems(f.id)}
+            items={rowItems(f.id, 'menu')}
             trigger={
               <IconButton
                 label={`Actions for ${f.name}`}

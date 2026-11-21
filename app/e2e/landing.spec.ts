@@ -1,8 +1,9 @@
 import AxeBuilder from '@axe-core/playwright'
+import { readFileSync } from 'node:fs'
 import { expect, test } from './fixtures'
 
 // Names of the original product (replica/brand.json "avoid"). They must never appear on the page.
-const AVOID: string[] = []
+const AVOID: string[] = JSON.parse(readFileSync(new URL('../../replica/brand.json', import.meta.url), 'utf8')).avoid
 
 test.describe('landing page', () => {
   test('renders with one primary button and no original name', async ({ page }) => {

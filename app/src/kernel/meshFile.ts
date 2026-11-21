@@ -2,7 +2,7 @@
 // so everything is unit-testable. Every format is normalised to a flat list of triangles in millimetres, and stored
 // in the document as a base64 binary STL.
 
-/** The largest mesh 3DShaper will turn into a solid. */
+/** The largest mesh 3DParter will turn into a solid. */
 export const MAX_MESH_TRIANGLES = 20_000
 
 export interface MeshData {
@@ -29,7 +29,7 @@ export function checkMesh(positions: Float32Array): MeshData {
 function assertTriangleCount(triangles: number): void {
   if (triangles > MAX_MESH_TRIANGLES) {
     throw new Error(
-      `This mesh has ${triangles.toLocaleString('en-US')} triangles. 3DShaper can turn meshes of up to ` +
+      `This mesh has ${triangles.toLocaleString('en-US')} triangles. 3DParter can turn meshes of up to ` +
         `${MAX_MESH_TRIANGLES.toLocaleString('en-US')} triangles into solids. Simplify it in your mesh tool first.`,
     )
   }
@@ -80,7 +80,7 @@ export function toBinaryStl(positions: Float32Array): Uint8Array {
   const n = Math.floor(positions.length / 9)
   const out = new Uint8Array(84 + 50 * n)
   const view = new DataView(out.buffer)
-  out.set(new TextEncoder().encode('3DShaper normalised mesh'), 0)
+  out.set(new TextEncoder().encode('3DParter normalised mesh'), 0)
   view.setUint32(80, n, true)
   for (let t = 0; t < n; t++) {
     const p = positions.subarray(t * 9, t * 9 + 9)
@@ -180,7 +180,7 @@ async function readZipText(bytes: Uint8Array, entries: Map<string, ZipEntry>, na
   const raw = bytes.subarray(start, start + e.compressedSize)
   if (e.method === 0) return textDecoder.decode(raw)
   if (e.method === 8) return textDecoder.decode(await inflateRaw(raw))
-  throw new Error('This 3MF file uses a compression method 3DShaper cannot read.')
+  throw new Error('This 3MF file uses a compression method 3DParter cannot read.')
 }
 
 function attrs(tag: string): Record<string, string> {

@@ -203,6 +203,8 @@ function OperationRow({
   )
 }
 
+const UNIT_SUFFIX = /[\d.]\s*(mm|cm|m|in|ft|deg)(?![a-z0-9_])/i
+
 function useCountInput(expr: string, onChange: (expr: string) => void) {
   const [typed, setTypedState] = useState<string | null>(null)
   const typedNow = useRef<string | null>(null)
@@ -214,6 +216,7 @@ function useCountInput(expr: string, onChange: (expr: string) => void) {
   const parse = (text: string): { ok: true; expr: string; isExpr: boolean; value: number } | { ok: false; message: string } => {
     const trimmed = text.trim()
     if (!trimmed) return { ok: false, message: 'Enter a whole number between 2 and 50.' }
+    if (UNIT_SUFFIX.test(trimmed)) return { ok: false, message: 'A count has no unit. Type a whole number between 2 and 50.' }
     const r = evalExpr(trimmed, scopeOf(useProjectStore.getState().doc))
     if (!r.ok) return { ok: false, message: r.message }
     if (!Number.isFinite(r.value) || r.value < 2 || r.value > 50 || Math.abs(r.value - Math.round(r.value)) > 1e-6) {

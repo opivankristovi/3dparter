@@ -265,13 +265,17 @@ test.describe('M5 edge & negative cases', () => {
     const patCard = page.getByRole('dialog', { name: 'Pattern', exact: true })
     await expect(patCard).toBeVisible()
 
-    // Invalid Count ('1', '51', 'abc' + Enter) keeps Apply disabled and card open.
+    // Invalid Count ('1', '51', '2cm' unit suffix BUG-033, 'abc' + Enter) keeps Apply disabled and card open.
     const countInput = patCard.getByLabel('Count')
     await countInput.fill('1')
     await countInput.blur()
     await expect(patCard.getByRole('button', { name: 'Apply' })).toBeDisabled()
     await countInput.fill('51')
     await countInput.blur()
+    await expect(patCard.getByRole('button', { name: 'Apply' })).toBeDisabled()
+    await countInput.fill('2cm')
+    await countInput.blur()
+    await expect(countInput).toHaveAttribute('aria-invalid', 'true')
     await expect(patCard.getByRole('button', { name: 'Apply' })).toBeDisabled()
     await countInput.fill('abc')
     await countInput.press('Enter')

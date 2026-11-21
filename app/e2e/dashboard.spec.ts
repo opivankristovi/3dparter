@@ -1,4 +1,6 @@
+import AxeBuilder from '@axe-core/playwright'
 import type { Page } from '@playwright/test'
+import { readFileSync } from 'node:fs'
 import { expect, test } from './fixtures'
 import { waitReady } from './helpers'
 
@@ -148,5 +150,40 @@ test.describe('F11 manage projects', () => {
     await page.reload()
     await expect(page.getByRole('heading', { name: 'Page not found' })).toBeVisible()
     await expect(page.getByRole('link', { name: 'Go to projects' })).toBeVisible()
+  })
+
+  test('X-5 rebrand check: 3DParter title, favicon, legacy .3dshaper.json import, and dark-theme axe', async ({ page }) => {
+    await page.goto('/')
+    await expect(page).toHaveTitle('3DParter')
+    await expect(page.getByRole('link', { name: '3DParter', exact: true })).toBeVisible()
+
+    // Favicon is the Deep Teal 3DParter vector mark (not the default icon).
+    const fav = await page.request.get('/favicon.svg')
+    expect(fav.status()).toBe(200)
+    expect(await fav.text()).toContain('#0b6e69')
+
+    // Export project as .3dparter.json, then verify legacy .3dshaper.json import compatibility.
+    await cardMenu(page, SEED).click()
+    const [dl] = await Promise.all([
+      page.waitForEvent('download'),
+      page.getByRole('menuitem', { name: 'Export project' }).click(),
+    ])
+    expect(dl.suggestedFilename()).toMatch(/\.3dparter\.json$/)
+    const exported = JSON.parse(readFileSync((await dl.path())!, 'utf8'))
+    exported.name = 'Legacy Archive'
+    await page.getByLabel('Import project file').setInputFiles({
+      name: 'legacy.3dshaper.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(JSON.stringify(exported)),
+    })
+    await expect(page.getByRole('main').getByRole('link', { name: /^Legacy Archive, / })).toBeVisible()
+
+    // Dark-theme Deep Teal palette (#2dd4bf / #071f1e) passes axe with zero moderate+ violations.
+    await page.getByRole('button', { name: 'Theme' }).click()
+    await page.getByRole('menuitemcheckbox', { name: 'Dark' }).click()
+    await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark')
+    const results = await new AxeBuilder({ page }).analyze()
+    const blocking = results.violations.filter((v) => v.impact === 'serious' || v.impact === 'critical' || v.impact === 'moderate')
+    expect(blocking.map((v) => `${v.id} (${v.impact}): ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([])
   })
 })

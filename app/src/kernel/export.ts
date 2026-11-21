@@ -236,7 +236,7 @@ const objName = (name: string): string => name.replace(/\s+/g, '_') || 'body'
 
 /** Wavefront OBJ, millimetres, one `o` group per body. Face lines use `v//vn` when the mesh has normals. */
 export function objFromMeshes(meshes: ExportMesh[]): string {
-  const lines: string[] = ['# 3DShaper OBJ export', '# Units: millimetres']
+  const lines: string[] = ['# 3DParter OBJ export', '# Units: millimetres']
   let offset = 0
   for (const m of meshes) {
     const count = Math.floor(m.positions.length / 3)
@@ -326,7 +326,7 @@ export function glbFromMeshes(meshes: ExportMesh[]): ArrayBuffer {
   })
 
   const json = {
-    asset: { version: '2.0', generator: '3DShaper' },
+    asset: { version: '2.0', generator: '3DParter' },
     scene: 0,
     scenes: [{ nodes: nodes.map((_, i) => i) }],
     nodes,
