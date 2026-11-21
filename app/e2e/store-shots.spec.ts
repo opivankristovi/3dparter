@@ -163,6 +163,12 @@ for (const d of DEVICES) {
           await page.setViewportSize(d.viewport)
           await page.waitForTimeout(600)
         })
+        // A fresh solid stays selected and brings up the suggested-actions bar; store shots read better without it.
+        // (The Export dialog scene keeps its selection: the dialog's own choice depends on it.)
+        if (s.file !== '04-export-dialog') {
+          await page.evaluate(() => window.__3dparter!.store.getState().setSelection([]))
+          await page.waitForTimeout(300)
+        }
         mkdirSync(join(OUT, d.name), { recursive: true })
         await page.screenshot({ path: join(OUT, d.name, `${s.file}.png`) })
       })
