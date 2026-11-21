@@ -29,9 +29,9 @@ test.describe('privacy and support pages', () => {
   test('terms page renders and is axe clean; linked from the privacy page', async ({ page }) => {
     await page.goto('/#/terms')
     await expect(page.getByRole('heading', { level: 1, name: 'Terms of use' })).toBeVisible()
-    await expect(page.getByText('Draft for the beta. These terms will be reviewed before any paid plan.')).toBeVisible()
+    await expect(page.getByText('Draft for the beta. These terms will be reviewed before the beta ends.')).toBeVisible()
     await expect(page.getByText('Effective 2026-11-21')).toBeVisible()
-    for (const name of ['A free beta, as is', 'Your data stays on your device', 'Acceptable use']) {
+    for (const name of ['Free to use, as is', 'Your data stays on your device', 'Acceptable use']) {
       await expect(page.getByRole('heading', { level: 2, name })).toBeVisible()
     }
     await expectNoBlockingViolations(page)

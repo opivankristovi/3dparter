@@ -78,7 +78,7 @@ const FAQ = [
   },
   {
     q: 'Will it stay free?',
-    a: 'It is free while in beta. Our plan is that modelling and exporting stay free, and that any paid extras are optional cloud features. We will say so here before anything changes.',
+    a: 'Yes. 3DParter is free to use, now and in the future. Modelling and exporting will never sit behind a paywall, and the code is open source under the GNU GPL v3.',
   },
 ]
 
@@ -177,7 +177,7 @@ export function Landing() {
             Pricing
           </h2>
           <div className="flex max-w-[60ch] flex-col gap-2 rounded-lg border border-border bg-accent-subtle p-4">
-            <p className="text-lg font-semibold text-text">Free while in beta</p>
+            <p className="text-lg font-semibold text-text">Free, now and in the future</p>
             <p className="text-base text-text">
               Every tool on this page is included. No account, no card, no project limit on your device.
             </p>

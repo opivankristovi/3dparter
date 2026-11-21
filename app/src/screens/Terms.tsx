@@ -1,21 +1,21 @@
 import { Link } from 'wouter'
 import { InfoPage, Section } from './InfoPage'
 
-/** Plain-English terms of use for the free beta. Keep it true to the product: if a plan, account or cloud feature ships, rewrite it. */
+/** Plain-English terms of use. 3DParter is free to use, now and in the future. Keep it true to the product: if an account or cloud feature ships, rewrite it. */
 export default function Terms() {
   return (
     <InfoPage
       title="Terms of use"
       intro={
         <>
-          <p>Draft for the beta. These terms will be reviewed before any paid plan.</p>
+          <p>Draft for the beta. These terms will be reviewed before the beta ends.</p>
           <p className="mt-2 text-sm">Effective 2026-11-21.</p>
         </>
       }
     >
-      <Section id="beta" title="A free beta, as is">
+      <Section id="beta" title="Free to use, as is">
         <p>
-          3DParter is a free beta. It is provided as is, without any warranty. It may have bugs, and we do not promise it will be available, accurate or free of errors.
+          3DParter is free to use, now and in the future. It is in beta and provided as is, without any warranty. It may have bugs, and we do not promise it will be available, accurate or free of errors.
         </p>
       </Section>
 

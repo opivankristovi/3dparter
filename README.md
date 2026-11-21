@@ -2,7 +2,7 @@
   <img src="app/public/social-card.png" alt="3DParter: parametric 3D CAD for makers. Free to start, free to export." width="720">
 </p>
 
-<h1 align="center">3DParter™</h1>
+<h1 align="center">3DParter</h1>
 
 <p align="center">
   <strong>Parametric 3D CAD for makers. Free to start, free to export.</strong><br>
@@ -97,7 +97,7 @@ npm run dev          # http://localhost:5173
 
 ## Status
 
-**Beta.** Free while in beta. Known gaps: technical drawings, assemblies, rendering, and IGES, DXF or SVG import. Found a bug or missing something? [Open an issue](https://github.com/opivankristovi/3dparter/issues) or use **Report a problem** in the app, which fills one in for you (nothing is sent until you press the button).
+**Beta.** 3DParter is free to use, now and in the future. Known gaps: technical drawings, assemblies, rendering, and IGES, DXF or SVG import. Found a bug or missing something? [Open an issue](https://github.com/opivankristovi/3dparter/issues) or use **Report a problem** in the app, which fills one in for you (nothing is sent until you press the button).
 
 [Terms](https://opivankristovi.github.io/3dparter/#/terms) · [Privacy](https://opivankristovi.github.io/3dparter/#/privacy)
 
