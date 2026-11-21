@@ -21,8 +21,11 @@ jobs:
           cache-dependency-path: app/package-lock.json
       - run: npm ci
       - run: npx playwright install --with-deps firefox
+      # Headless Firefox finds no GL driver on a GPU-less runner, so run it with a window on a virtual screen
+      # (Xvfb) where Mesa's software renderer gives it WebGL.
+      - run: sudo apt-get update && sudo apt-get install -y xvfb libgl1-mesa-dri libglx-mesa0
       - name: Firefox end-to-end
-        run: npx playwright test --project=firefox-desktop --reporter=line --max-failures=15
+        run: xvfb-run -a --server-args="-screen 0 1920x1080x24" npx playwright test --project=firefox-desktop --headed --reporter=line --max-failures=15
         env:
           CROSS_BROWSER: '1'
       - uses: actions/upload-artifact@v4
