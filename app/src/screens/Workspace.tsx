@@ -24,6 +24,7 @@ import type { ViewportEngine } from '../viewport/engine'
 import { ExportDialog } from './dialogs/ExportDialog'
 import type { ExportOptions } from './dialogs/ExportDialog'
 import { ImportDialog } from './dialogs/ImportDialog'
+import { ReportDialog } from '../support/ReportDialog'
 import { SettingsDialog } from './dialogs/SettingsDialog'
 import { NotFound } from './NotFound'
 import { SaveChip } from './workspace/SaveChip'
@@ -158,6 +159,7 @@ function Shell({
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
 
   const saveImage = view?.onSaveImage
 
@@ -257,6 +259,7 @@ function Shell({
       },
       { id: 'view.image', label: 'Save view as image', group: 'File', onRun: () => saveImage?.() },
       { id: 'shortcuts', label: 'Keyboard shortcuts', group: 'Help', shortcut: '?', onRun: () => setShortcutsOpen(true) },
+      { id: 'report', label: 'Report a problem', group: 'Help', onRun: () => setReportOpen(true) },
       { id: 'theme', label: 'Toggle theme', group: 'View', onRun: () => useSettings.getState().toggleTheme() },
     ],
     [goHome, navigate, sketching, autoOn, saveImage],
@@ -463,6 +466,7 @@ function Shell({
       />
       <SettingsDialog open={settingsOpen} onOpenChange={setSettingsOpen} />
       <ShortcutSheetDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
+      <ReportDialog open={reportOpen} onOpenChange={setReportOpen} />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} commands={commands} />
     </div>
   )

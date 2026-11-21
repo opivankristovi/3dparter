@@ -1,5 +1,5 @@
 // M5 kernel & sketcher tests: Extrude offset/throughAll, Sweep, Loft, Split, Mirror, Linear/Circular Pattern,
-// STEP import + fillet, sketcher polygon/slot/ellipse/spline/trim/fillet/mirror/pattern, and .3dshaper.json serialization.
+// STEP import + fillet, sketcher polygon/slot/ellipse/spline/trim/fillet/mirror/pattern, and .3dparter.json serialization.
 import { beforeAll, describe, expect, it } from 'vitest'
 import { addFeature } from '../doc/commands'
 import { emptyDocument } from '../doc/types'

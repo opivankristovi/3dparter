@@ -28,7 +28,7 @@ export async function variableCommand(page: Page, name: string, ...args: string[
 }
 
 export const variablesOf = (page: Page) =>
-  page.evaluate(() => window.__3dshaper!.store.getState().doc.variables.map((v) => ({ id: v.id, name: v.name, expression: v.expression })))
+  page.evaluate(() => window.__3dparter!.store.getState().doc.variables.map((v) => ({ id: v.id, name: v.name, expression: v.expression })))
 
 /** Opens the sidebar's Variables tab (on a phone, the panel first) and returns the panel. */
 export async function openVariables(page: Page): Promise<Locator> {

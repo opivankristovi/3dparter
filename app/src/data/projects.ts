@@ -29,7 +29,7 @@ export interface SavedMessage {
 let channel: BroadcastChannel | null | undefined
 function getChannel(): BroadcastChannel | null {
   if (channel === undefined) {
-    channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('3dshaper')
+    channel = typeof BroadcastChannel === 'undefined' ? null : new BroadcastChannel('3dparter')
   }
   return channel
 }

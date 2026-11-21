@@ -29,7 +29,7 @@ async function pickTopPlaneAgain(page: Page) {
   await expect
     .poll(async () => {
       target = await page.evaluate(() => {
-        const h = window.__3dshaper!
+        const h = window.__3dparter!
         const candidates: [number, number, number][] = [
           [10, -10, 0],
           [5, -15, 0],
@@ -69,7 +69,7 @@ async function clickPickableNear(page: Page, world: [number, number, number], ki
     .poll(async () => {
       pt = await page.evaluate(
         ({ w, want }) => {
-          const h = window.__3dshaper!
+          const h = window.__3dparter!
           const [cx, cy] = h.toClient(w)
           const offsets: [number, number][] = [
             [0, 0],

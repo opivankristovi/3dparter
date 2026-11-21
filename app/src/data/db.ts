@@ -12,6 +12,8 @@ export interface SettingsRow {
   gridSnap: boolean
   /** Set once the sample project has been created, so deleting it never re-seeds. */
   seeded?: boolean
+  /** Set once the one-time copy from the pre-rename '3dshaper' database has run. */
+  legacyMigrated?: boolean
 }
 
 export interface FolderRow {
@@ -53,7 +55,7 @@ export interface AssetRow {
   createdAt: number
 }
 
-export type ShaperDB = Dexie & {
+export type ParterDB = Dexie & {
   settings: EntityTable<SettingsRow, 'id'>
   folders: EntityTable<FolderRow, 'id'>
   projects: EntityTable<ProjectRow, 'id'>
@@ -61,7 +63,7 @@ export type ShaperDB = Dexie & {
   assets: EntityTable<AssetRow, 'id'>
 }
 
-export const db = new Dexie('3dshaper') as ShaperDB
+export const db = new Dexie('3dparter') as ParterDB
 
 db.version(1).stores({
   settings: 'id',

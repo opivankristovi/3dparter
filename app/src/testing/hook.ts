@@ -3,7 +3,7 @@ import { useProjectStore } from '../doc/store'
 import type { Vec3 } from '../doc/types'
 import type { ViewportEngine } from '../viewport/engine'
 
-export interface ShaperTestHook {
+export interface ParterTestHook {
   store: typeof useProjectStore
   engine: ViewportEngine
   toClient: (world: Vec3) => [number, number]
@@ -12,20 +12,20 @@ export interface ShaperTestHook {
 
 declare global {
   interface Window {
-    __3dshaper?: ShaperTestHook
+    __3dparter?: ParterTestHook
   }
 }
 
 export function installTestHook(engine: ViewportEngine, kernelReady: () => boolean): () => void {
   if (!import.meta.env.DEV) return () => {}
-  const hook: ShaperTestHook = {
+  const hook: ParterTestHook = {
     store: useProjectStore,
     engine,
     toClient: (world) => engine.worldToClient(world),
     kernelReady,
   }
-  window.__3dshaper = hook
+  window.__3dparter = hook
   return () => {
-    if (window.__3dshaper === hook) delete window.__3dshaper
+    if (window.__3dparter === hook) delete window.__3dparter
   }
 }

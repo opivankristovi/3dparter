@@ -91,7 +91,7 @@ test.describe('BUG-013 Move gizmo handles stay apart', () => {
         expect(apart, `${names[i]} and ${names[j]} overlap: ${JSON.stringify([a, b])}`).toBe(true)
       }
     }
-    const [ox, oy] = await page.evaluate(() => window.__3dshaper!.toClient([20, 10, 5]))
+    const [ox, oy] = await page.evaluate(() => window.__3dparter!.toClient([20, 10, 5]))
     for (let i = 0; i < boxes.length; i++) {
       const b = boxes[i]
       const nearestX = Math.max(b.x, Math.min(ox, b.x + b.width))
@@ -110,7 +110,7 @@ async function expectBoxClearOfPanels(page: Page, height: number) {
   for (const x of [0, 40]) {
     for (const y of [0, 20]) {
       for (const z of [0, 10]) {
-        const [px, py] = await page.evaluate((w) => window.__3dshaper!.toClient(w), [x, y, z] as [number, number, number])
+        const [px, py] = await page.evaluate((w) => window.__3dparter!.toClient(w), [x, y, z] as [number, number, number])
         const at = `corner ${x},${y},${z}`
         expect(px, at).toBeGreaterThanOrEqual(rail!.x + rail!.width)
         expect(px, at).toBeLessThanOrEqual(side!.x)

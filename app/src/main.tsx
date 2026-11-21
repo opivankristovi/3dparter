@@ -4,6 +4,7 @@ import './styles/app.css'
 import { App } from './app/App'
 import { requestPersistence } from './data/projects'
 import { seedIfFirstRun } from './data/seed'
+import { registerServiceWorker } from './pwa/register'
 
 // Ask the browser not to evict our projects, then add the sample on first run.
 // A storage failure must not stop the app from drawing.
@@ -17,3 +18,5 @@ void ready.then(() => {
     </StrictMode>,
   )
 })
+
+registerServiceWorker()

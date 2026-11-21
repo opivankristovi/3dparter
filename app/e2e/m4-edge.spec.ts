@@ -149,7 +149,7 @@ test.describe('M4 edge & negative cases', () => {
     await expect(card).toBeHidden()
     await clickWorld(page, [20, 10, 10])
     await expect
-      .poll(async () => page.evaluate(() => window.__3dshaper!.store.getState().selection[0]?.kind ?? null))
+      .poll(async () => page.evaluate(() => window.__3dparter!.store.getState().selection[0]?.kind ?? null))
       .toBe('face')
   })
 
@@ -177,7 +177,7 @@ test.describe('M4 edge & negative cases', () => {
     await expect(card.getByText('(40, 20, 10) mm')).toHaveCount(0)
     await expect
       .poll(() =>
-        page.evaluate(() => (window.__3dshaper!.engine as unknown as { edgeMarksGroup: { children: unknown[] } }).edgeMarksGroup.children.length),
+        page.evaluate(() => (window.__3dparter!.engine as unknown as { edgeMarksGroup: { children: unknown[] } }).edgeMarksGroup.children.length),
       )
       .toBe(0)
   })
@@ -193,14 +193,14 @@ test.describe('M4 edge & negative cases', () => {
     await page.keyboard.press('b')
     await clickWorld(page, [20, 10, 10])
     await expect
-      .poll(async () => page.evaluate(() => window.__3dshaper!.store.getState().selection[0]?.kind ?? null))
+      .poll(async () => page.evaluate(() => window.__3dparter!.store.getState().selection[0]?.kind ?? null))
       .toBe('body')
 
     // Press B again -> toggles filter off, clicking top face center picks face.
     await page.keyboard.press('b')
     await clickWorld(page, [20, 10, 10])
     await expect
-      .poll(async () => page.evaluate(() => window.__3dshaper!.store.getState().selection[0]?.kind ?? null))
+      .poll(async () => page.evaluate(() => window.__3dparter!.store.getState().selection[0]?.kind ?? null))
       .toBe('face')
 
     // Phone layout check.

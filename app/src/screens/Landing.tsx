@@ -1,3 +1,4 @@
+import { Link } from 'wouter'
 import { LinkButton } from './LinkButton'
 
 /** Public landing page, served at #/welcome. Copy lives in replica/launch/landing.md; keep the two in step. */
@@ -211,9 +212,17 @@ export function Landing() {
       </main>
 
       <footer className="border-t border-border">
-        <p className="mx-auto w-full max-w-(--layout-dashboard-max) px-4 py-4 text-sm text-text-muted">
-          3DParter is in beta. Projects are stored in your browser.
-        </p>
+        <div className="mx-auto flex w-full max-w-(--layout-dashboard-max) flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-4 text-sm text-text-muted">
+          <p>3DParter is in beta. Projects are stored in your browser.</p>
+          <nav aria-label="Footer" className="flex gap-4">
+            <Link href="/privacy" className="underline">
+              Privacy
+            </Link>
+            <Link href="/support" className="underline">
+              Support
+            </Link>
+          </nav>
+        </div>
       </footer>
     </div>
   )

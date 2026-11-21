@@ -8,13 +8,13 @@ import type { StlInfo } from './stl'
 
 type World = [number, number, number]
 
-export const doc = (page: Page): Promise<ProjectDocument> => page.evaluate(() => window.__3dshaper!.store.getState().doc)
+export const doc = (page: Page): Promise<ProjectDocument> => page.evaluate(() => window.__3dparter!.store.getState().doc)
 export const sketches = (d: ProjectDocument) => d.features.filter((f): f is SketchFeature => f.type === 'sketch')
 export const extrudes = (d: ProjectDocument) => d.features.filter((f): f is ExtrudeFeature => f.type === 'extrude')
 
 /** Waits until the geometry engine has loaded in the open workspace. */
 export async function waitReady(page: Page) {
-  await page.waitForFunction(() => window.__3dshaper?.kernelReady() === true, undefined, { timeout: 50_000 })
+  await page.waitForFunction(() => window.__3dparter?.kernelReady() === true, undefined, { timeout: 50_000 })
 }
 
 /** Dashboard -> New project -> empty workspace with the engine ready. */
@@ -32,7 +32,7 @@ export async function waitCameraStable(page: Page) {
   })
   await page.waitForFunction(
     () => {
-      const h = window.__3dshaper
+      const h = window.__3dparter
       if (!h) return false
       const r = (p: [number, number]) => [Math.round(p[0] * 10), Math.round(p[1] * 10)]
       const key = JSON.stringify([r(h.toClient([0, 0, 0])), r(h.toClient([40, 40, 0])), r(h.toClient([0, 0, 40]))])
@@ -47,7 +47,7 @@ export async function waitCameraStable(page: Page) {
 }
 
 export async function clientOf(page: Page, world: World): Promise<[number, number]> {
-  return page.evaluate((w) => window.__3dshaper!.toClient(w), world)
+  return page.evaluate((w) => window.__3dparter!.toClient(w), world)
 }
 
 export async function clickWorld(page: Page, world: World) {
@@ -63,7 +63,7 @@ export async function pickTopPlane(page: Page) {
   // The other two origin planes can sit in front of the Top plane along the view ray, so ask the engine
   // which candidate point really picks the Top plane (XY) before clicking it.
   const target = await page.evaluate(() => {
-    const h = window.__3dshaper!
+    const h = window.__3dparter!
     const candidates: [number, number, number][] = [
       [20, 20, 0],
       [30, 30, 0],
@@ -104,7 +104,7 @@ export async function drawRectangle(page: Page, w = '40', h = '20') {
 export const extrudeCard = (page: Page) => page.getByRole('dialog', { name: 'Extrude', exact: true })
 
 export async function bodyMeshes(page: Page): Promise<number> {
-  return page.evaluate(() => (window.__3dshaper!.engine as unknown as { bodies: Map<string, unknown> }).bodies.size)
+  return page.evaluate(() => (window.__3dparter!.engine as unknown as { bodies: Map<string, unknown> }).bodies.size)
 }
 
 /** Finish sketch -> Extrude -> Apply. Leaves one solid. */
@@ -157,7 +157,7 @@ export async function savedProjects(page: Page): Promise<SavedProject[]> {
   return page.evaluate(
     () =>
       new Promise<SavedProject[]>((resolve, reject) => {
-        const open = indexedDB.open('3dshaper')
+        const open = indexedDB.open('3dparter')
         open.onerror = () => reject(open.error)
         open.onsuccess = () => {
           const db = open.result
@@ -172,7 +172,7 @@ export async function savedProjects(page: Page): Promise<SavedProject[]> {
   )
 }
 
-export const projectId = (page: Page): Promise<string | null> => page.evaluate(() => window.__3dshaper!.store.getState().projectId)
+export const projectId = (page: Page): Promise<string | null> => page.evaluate(() => window.__3dparter!.store.getState().projectId)
 
 export function near(actual: number, expected: number, tol = 0.01) {
   expect(Math.abs(actual - expected), `${actual} should be within ${tol} of ${expected}`).toBeLessThanOrEqual(tol)
@@ -198,7 +198,7 @@ export async function pickTopPlaneAgain(page: Page) {
   await expect
     .poll(async () => {
       target = await page.evaluate(() => {
-        const h = window.__3dshaper!
+        const h = window.__3dparter!
         const candidates: [number, number, number][] = [
           [10, -10, 0], [5, -15, 0], [15, -15, 0], [10, -20, 0], [-10, -10, 0], [-15, -5, 0], [20, -15, 0],
           [30, -30, 0], [-30, 30, 0], [-30, -30, 0], [35, -35, 0], [-35, -5, 0], [-5, -35, 0], [20, 20, 0], [30, 30, 0],
@@ -225,7 +225,7 @@ export async function clickPickableNear(page: Page, world: World, kind: 'edge' |
     .poll(async () => {
       pt = await page.evaluate(
         ({ w, want }) => {
-          const h = window.__3dshaper!
+          const h = window.__3dparter!
           const [cx, cy] = h.toClient(w)
           const offsets: [number, number][] = [[0, 0]]
           for (let r = 1; r <= 4; r++) offsets.push([0, r], [0, -r], [r, 0], [-r, 0])
@@ -292,7 +292,7 @@ export interface BodyStat {
 /** Volume and bounding box of every rendered solid, from the meshes the viewport holds. */
 export async function bodyStats(page: Page): Promise<BodyStat[]> {
   return page.evaluate(() => {
-    const bodies = (window.__3dshaper!.engine as unknown as { bodies: Map<string, { id: string; data: { positions: Float32Array; indices: Uint32Array } }> }).bodies
+    const bodies = (window.__3dparter!.engine as unknown as { bodies: Map<string, { id: string; data: { positions: Float32Array; indices: Uint32Array } }> }).bodies
     return [...bodies.values()].map((b) => {
       const p = b.data.positions
       const ix = b.data.indices

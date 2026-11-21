@@ -165,7 +165,7 @@ test.describe('M4 Workspace and I/O', () => {
     await page.keyboard.press('Escape')
     await page.getByRole('tab', { name: 'Items' }).click()
     await page.getByRole('tree', { name: 'Solids' }).getByRole('treeitem', { name: 'Body 2' }).click()
-    await expect.poll(async () => page.evaluate(() => window.__3dshaper!.store.getState().selection.length)).toBe(1)
+    await expect.poll(async () => page.evaluate(() => window.__3dparter!.store.getState().selection.length)).toBe(1)
 
     // Export 3MF defaults to Selected (1) = 4000 mm3.
     const one3mf = await downloadExport(page, '3MF')
@@ -225,7 +225,7 @@ test.describe('M4 Workspace and I/O', () => {
     await waitCameraStable(page)
 
     const bounds = await page.evaluate(() => {
-      const h = window.__3dshaper!
+      const h = window.__3dparter!
       const proj = (pts: [number, number, number][]) => {
         const xs = pts.map((p) => h.toClient(p)[0])
         const ys = pts.map((p) => h.toClient(p)[1])
@@ -249,7 +249,7 @@ test.describe('M4 Workspace and I/O', () => {
     await expect(page.locator('[data-box-select="enclosed"]')).toBeVisible()
     await page.mouse.up()
     await expect
-      .poll(async () => page.evaluate(() => window.__3dshaper!.store.getState().selection))
+      .poll(async () => page.evaluate(() => window.__3dparter!.store.getState().selection))
       .toEqual([{ kind: 'body', name: (await doc(page)).features.find((f) => f.name === 'Extrude 1')!.id }])
 
     // Right-to-left crossing drag overlapping just the edge of solid 2 (does NOT enclose solid 2).
@@ -261,13 +261,13 @@ test.describe('M4 Workspace and I/O', () => {
     await expect(page.locator('[data-box-select="crossing"]')).toBeVisible()
     await page.mouse.up()
     await expect
-      .poll(async () => page.evaluate(() => window.__3dshaper!.store.getState().selection))
+      .poll(async () => page.evaluate(() => window.__3dparter!.store.getState().selection))
       .toEqual([{ kind: 'body', name: (await doc(page)).features.find((f) => f.name === 'Extrude 2')!.id }])
 
     // Default 'face-edge' pick resolves a 3D vertex directly at a corner.
     await clickPickableNear(page, [20, 20, 10], 'vertex')
     await expect
-      .poll(async () => page.evaluate(() => window.__3dshaper!.store.getState().selection[0]?.kind))
+      .poll(async () => page.evaluate(() => window.__3dparter!.store.getState().selection[0]?.kind))
       .toBe('vertex')
   })
 
@@ -280,7 +280,7 @@ test.describe('M4 Workspace and I/O', () => {
     await page.getByRole('button', { name: 'View from front' }).click()
     await waitCameraStable(page)
 
-    const up = () => page.evaluate(() => window.__3dshaper!.engine.camera.up.toArray())
+    const up = () => page.evaluate(() => window.__3dparter!.engine.camera.up.toArray())
     const up0 = await up()
     expect(up0[2]).toBeCloseTo(1, 3)
 

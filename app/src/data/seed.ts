@@ -1,6 +1,7 @@
 import { emptyDocument } from '../doc/types'
 import type { ExtrudeFeature, LineEntity, ProjectDocument, SketchFeature } from '../doc/types'
 import { db } from './db'
+import { migrateLegacyDb } from './migrate'
 import { createProject, getSettings, updateSettings } from './projects'
 
 export function sampleDocument(): ProjectDocument {
@@ -57,6 +58,12 @@ export function sampleDocument(): ProjectDocument {
 
 /** First run only: one sample project. The flag stays set after the sample is deleted. */
 export async function seedIfFirstRun(): Promise<void> {
+  // Before anything reads projects: bring over data from the pre-rename database.
+  try {
+    await migrateLegacyDb()
+  } catch {
+    // A failed copy must not block the app; the old database is untouched and the next load retries.
+  }
   const settings = await getSettings()
   if (settings.seeded) return
   if ((await db.projects.count()) === 0) {

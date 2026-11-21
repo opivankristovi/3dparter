@@ -272,6 +272,7 @@ export function Dashboard() {
       <main className="mx-auto flex w-full max-w-(--layout-dashboard-max) flex-col gap-4 px-4 py-6">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="flex-1 text-xl">{inTrash ? 'Trash' : 'Projects'}</h1>
+          {/* .3dshaper / .3dshaper.json are the pre-rename extensions; still accepted so old exports import. */}
           <input
             ref={importInputRef}
             type="file"

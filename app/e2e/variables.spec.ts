@@ -18,7 +18,7 @@ import {
 import { PANEL_MOUNTED, addVariableInPanel, openVariables, variableCommand, variableRow, variablesOf } from './variablesPanel'
 
 const volumeOf = async (page: Page) => (await bodyStats(page))[0]?.volume ?? 0
-const undo = (page: Page) => page.evaluate(() => window.__3dshaper!.store.getState().undo())
+const undo = (page: Page) => page.evaluate(() => window.__3dparter!.store.getState().undo())
 const entitiesOf = async (page: Page) => sketches(await doc(page)).flatMap((s) => s.sketch.entities)
 const historyExtrude = (page: Page) => page.getByRole('tree', { name: 'History' }).getByRole('treeitem', { name: /Extrude 1/ })
 

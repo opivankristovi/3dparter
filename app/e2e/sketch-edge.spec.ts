@@ -41,7 +41,7 @@ test.describe('sketch edge cases', () => {
     await clickWorld(page, [20, 0, 0])
     await expect(bar(page)).toBeVisible()
     const marks = await page.evaluate(() => {
-      const eng = window.__3dshaper!.engine as unknown as { marksGroup: { children: Record<string, unknown>[] } }
+      const eng = window.__3dparter!.engine as unknown as { marksGroup: { children: Record<string, unknown>[] } }
       return eng.marksGroup.children.map((c) => ({
         wide: (c as { isLineSegments2?: boolean }).isLineSegments2 === true,
         width: ((c as { material?: { linewidth?: number } }).material?.linewidth ?? 0) as number,

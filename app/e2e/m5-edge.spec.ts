@@ -156,14 +156,14 @@ test.describe('M5 edge & negative cases', () => {
     await page.keyboard.press('Enter')
     await page.getByRole('button', { name: 'Finish sketch' }).click()
 
-    await page.evaluate(() => window.__3dshaper!.store.getState().setSelection([{ kind: 'originPlane', name: 'XZ' }]))
+    await page.evaluate(() => window.__3dparter!.store.getState().setSelection([{ kind: 'originPlane', name: 'XZ' }]))
     await toolButton(page, 'Line').click()
     await expect.poll(async () => sketches(await doc(page)).length).toBe(2)
     await waitCameraStable(page)
     await clickWorld(page, [0, 0, 0])
     const linePanel = page.getByRole('group', { name: 'Shape size' })
     await expect(linePanel).toBeVisible()
-    await page.mouse.move(...(await page.evaluate(() => window.__3dshaper!.toClient([0, 0, 30]))))
+    await page.mouse.move(...(await page.evaluate(() => window.__3dparter!.toClient([0, 0, 30]))))
     await page.keyboard.type('30')
     await page.keyboard.press('Enter')
     await page.getByRole('button', { name: 'Finish sketch' }).click()
@@ -224,7 +224,7 @@ test.describe('M5 edge & negative cases', () => {
 
     // Mirror with Join mirrored solids checked -> 1 merged solid (2x volume), then edit via History to unmerge -> 2 solids.
     await page.evaluate(
-      (id) => window.__3dshaper!.store.getState().setSelection([{ kind: 'body', name: id }]),
+      (id) => window.__3dparter!.store.getState().setSelection([{ kind: 'body', name: id }]),
       (await doc(page)).features.find((f) => f.type === 'extrude')!.id,
     )
     await toolButton(page, 'Mirror').click()
@@ -377,12 +377,12 @@ test.describe('M5 edge & negative cases', () => {
     const box = (await page.locator('canvas').boundingBox())!
     const cx = Math.round(box.x + box.width * 0.5)
     const cy = Math.round(box.y + box.height * 0.5)
-    const camBefore = await page.evaluate(() => window.__3dshaper!.engine.camera.position.toArray())
+    const camBefore = await page.evaluate(() => window.__3dparter!.engine.camera.position.toArray())
     await page.mouse.move(cx, cy)
     await page.mouse.down({ button: 'right' })
     await page.mouse.move(cx + 80, cy - 30, { steps: 6 })
     await page.mouse.up({ button: 'right' })
-    const camAfter = await page.evaluate(() => window.__3dshaper!.engine.camera.position.toArray())
+    const camAfter = await page.evaluate(() => window.__3dparter!.engine.camera.position.toArray())
     expect(Math.hypot(camAfter[0] - camBefore[0], camAfter[1] - camBefore[1], camAfter[2] - camBefore[2])).toBeGreaterThan(2)
     await expect(page.getByRole('menu', { name: 'Viewport menu' })).toBeHidden()
 
@@ -418,14 +418,14 @@ test.describe('M5 edge & negative cases', () => {
     await page.waitForTimeout(650)
     await page.reload()
     await waitReady(page)
-    const reloadedApp = await page.evaluate(() => Object.values(window.__3dshaper!.store.getState().doc.bodies)[0])
+    const reloadedApp = await page.evaluate(() => Object.values(window.__3dparter!.store.getState().doc.bodies)[0])
     expect(reloadedApp.color).toBe('token:warning')
     expect(reloadedApp.opacity).toBeCloseTo(0.25, 2)
 
     await page.getByRole('tab', { name: 'Items' }).click()
     await page.getByRole('button', { name: /Appearance for/ }).first().click()
     await page.getByRole('menuitem', { name: 'Reset appearance' }).click()
-    const resetApp = await page.evaluate(() => Object.values(window.__3dshaper!.store.getState().doc.bodies)[0])
+    const resetApp = await page.evaluate(() => Object.values(window.__3dparter!.store.getState().doc.bodies)[0])
     expect(resetApp.color).toBeNull()
     expect(resetApp.opacity).toBe(1)
 

@@ -21,7 +21,7 @@ import {
 import { addVariableInPanel, openVariables, variableCommand, variableRow, variablesOf } from './variablesPanel'
 
 const volumeOf = async (page: Page) => (await bodyStats(page))[0]?.volume ?? 0
-const undo = (page: Page) => page.evaluate(() => window.__3dshaper!.store.getState().undo())
+const undo = (page: Page) => page.evaluate(() => window.__3dparter!.store.getState().undo())
 
 async function extrudeWith(page: Page, distance: string) {
   await page.getByRole('button', { name: 'Finish sketch' }).click()
@@ -253,7 +253,7 @@ test.describe('History marker: M3 test pass', () => {
   test('F02-E4 holding the grip or marker on a phone does not pop an empty menu or freeze taps (BUG-018) @mobile', async ({ page }) => {
     await newProject(page)
     await page.evaluate(() => {
-      const s = window.__3dshaper!.store.getState()
+      const s = window.__3dparter!.store.getState()
       s.apply('Add steps', (d) => {
         for (let i = 1; i <= 2; i++) {
           d.features.push({

@@ -38,7 +38,7 @@ async function textEntities(page: Page): Promise<TextEntity[]> {
 const scales = async (page: Page) => (await doc(page)).features.filter((f) => f.type === 'scale')
 
 async function regionNames(page: Page): Promise<string[]> {
-  return page.evaluate(() => (window.__3dshaper!.engine as unknown as { regions: { name: string }[] }).regions.map((r) => r.name))
+  return page.evaluate(() => (window.__3dparter!.engine as unknown as { regions: { name: string }[] }).regions.map((r) => r.name))
 }
 
 /** Text tool -> Top plane -> click at `at` (card opens). */
@@ -68,7 +68,7 @@ async function extrudeText(page: Page, opts: { mode?: 'Join' | 'Cut'; distance?:
   // The whole text, the way a plain click on a letter picks it: letters added later are included.
   const names = [...new Set((await regionNames(page)).filter((n) => n.includes('~')).map((n) => n.replace(/~\d+$/, '~*')))]
   await page.evaluate((list) => {
-    window.__3dshaper!.store.getState().setSelection(list.map((name) => ({ kind: 'sketchRegion' as const, name })))
+    window.__3dparter!.store.getState().setSelection(list.map((name) => ({ kind: 'sketchRegion' as const, name })))
   }, names)
   const card = extrudeCard(page)
   await expect(card).toBeVisible()
@@ -94,7 +94,7 @@ async function textOnTopFace(page: Page) {
 /** Radial extent of every solid vertex around the Z axis. */
 async function radii(page: Page): Promise<{ min: number; max: number }> {
   return page.evaluate(() => {
-    const bodies = (window.__3dshaper!.engine as unknown as { bodies: Map<string, { data: { positions: Float32Array } }> }).bodies
+    const bodies = (window.__3dparter!.engine as unknown as { bodies: Map<string, { data: { positions: Float32Array } }> }).bodies
     let min = Infinity
     let max = 0
     for (const b of bodies.values()) {
@@ -573,7 +573,7 @@ test.describe('M6 export edge cases', () => {
     await settle(page)
     const name = 'Bracket "A" – Ø12 🚀'
     await page.evaluate((n) => {
-      const s = window.__3dshaper!.store.getState()
+      const s = window.__3dparter!.store.getState()
       s.apply('Rename body', (d) => {
         const key = Object.keys(d.bodies)[0]
         d.bodies[key].name = n

@@ -444,7 +444,7 @@ test.describe('M2 edge cases: sketching on faces and planes', () => {
     await toolButton(page, 'Circle').click()
     // The side of the cylinder: a point on the silhouette side facing the camera.
     const hit = await page.evaluate(() => {
-      const h = window.__3dshaper!
+      const h = window.__3dparter!
       for (let a = 0; a < 360; a += 10) {
         const w: [number, number, number] = [10 * Math.cos((a * Math.PI) / 180), 10 * Math.sin((a * Math.PI) / 180), 5]
         const [x, y] = h.toClient(w)
@@ -481,7 +481,7 @@ test.describe('M2 edge cases: sketching on faces and planes', () => {
     await expect
       .poll(async () => {
         target = await page.evaluate(() => {
-          const h = window.__3dshaper!
+          const h = window.__3dparter!
           for (let x = -30; x <= 30; x += 5) {
             for (let y = -30; y <= 30; y += 5) {
               const [cx, cy] = h.toClient([x, y, 15])
@@ -516,7 +516,7 @@ test.describe('M2 edge cases: keyboard', () => {
   test('F01-E14 Keyboard only: G opens Fillet with the preselected edge, type a radius, Enter applies', async ({ page }) => {
     await boxReady(page)
     await clickPickableNear(page, TOP_X_EDGE, 'edge') // selection mode: the edge is selected
-    await expect.poll(async () => page.evaluate(() => window.__3dshaper!.store.getState().selection.length)).toBe(1)
+    await expect.poll(async () => page.evaluate(() => window.__3dparter!.store.getState().selection.length)).toBe(1)
     await page.keyboard.press('g')
     const c = card(page, 'Fillet')
     await expect(c).toBeVisible()
@@ -602,7 +602,7 @@ test.describe('M2 edge cases: phone width', () => {
       await expect
         .poll(async () => {
           pt = await page.evaluate(() => {
-            const h = window.__3dshaper!
+            const h = window.__3dparter!
             const picked = h.store.getState().selection.map((r) => r.name)
             for (let y = 20; y < 820; y += 8) {
               for (let x = 10; x < 380; x += 8) {
@@ -617,7 +617,7 @@ test.describe('M2 edge cases: phone width', () => {
         })
         .toBe(true)
       await page.mouse.click(pt![0], pt![1])
-      await expect.poll(async () => page.evaluate(() => window.__3dshaper!.store.getState().selection.length)).toBe(n)
+      await expect.poll(async () => page.evaluate(() => window.__3dparter!.store.getState().selection.length)).toBe(n)
     }
     await settle(page)
     await expect(c.getByRole('button', { name: 'Apply' })).toBeEnabled()

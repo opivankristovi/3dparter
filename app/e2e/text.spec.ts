@@ -28,7 +28,7 @@ async function textEntities(page: Page): Promise<TextEntity[]> {
 
 /** Region names the viewport knows right now (all sketches while the Extrude tool is on). */
 async function regionNames(page: Page): Promise<string[]> {
-  return page.evaluate(() => (window.__3dshaper!.engine as unknown as { regions: { name: string }[] }).regions.map((r) => r.name))
+  return page.evaluate(() => (window.__3dparter!.engine as unknown as { regions: { name: string }[] }).regions.map((r) => r.name))
 }
 
 /** Finish the sketch, switch on Extrude, pick the text regions and apply. */
@@ -38,7 +38,7 @@ async function extrudeTextRegions(page: Page) {
   await expect.poll(async () => (await regionNames(page)).filter((n) => n.includes('~')).length).toBeGreaterThan(0)
   const names = (await regionNames(page)).filter((n) => n.includes('~'))
   await page.evaluate((list) => {
-    window.__3dshaper!.store.getState().setSelection(list.map((name) => ({ kind: 'sketchRegion' as const, name })))
+    window.__3dparter!.store.getState().setSelection(list.map((name) => ({ kind: 'sketchRegion' as const, name })))
   }, names)
   const card = extrudeCard(page)
   await expect(card).toBeVisible()
@@ -54,7 +54,7 @@ async function extrudeTextRegions(page: Page) {
 /** World-space bounding box of each region the viewport shows (x and y, the sketch is on the Top plane). */
 async function regionBoxes(page: Page): Promise<{ name: string; min: [number, number]; max: [number, number] }[]> {
   return page.evaluate(() => {
-    const engine = window.__3dshaper!.engine as unknown as {
+    const engine = window.__3dparter!.engine as unknown as {
       regions: { name: string; mesh: { geometry: { getAttribute(n: string): { count: number; getX(i: number): number; getY(i: number): number } } } }[]
     }
     return engine.regions.map((r) => {
@@ -75,7 +75,7 @@ async function regionBoxes(page: Page): Promise<{ name: string; min: [number, nu
 }
 
 const selectedRegions = (page: Page) =>
-  page.evaluate(() => window.__3dshaper!.store.getState().selection.filter((r) => r.kind === 'sketchRegion').map((r) => r.name))
+  page.evaluate(() => window.__3dparter!.store.getState().selection.filter((r) => r.kind === 'sketchRegion').map((r) => r.name))
 
 /** Text tool, a text "HELLO" of size 20 at (-30, 0), applied; then the sketch is finished and Extrude is on. */
 async function helloAndExtrudeTool(page: Page) {
@@ -127,7 +127,7 @@ test.describe('sketch text', () => {
     await card.getByRole('button', { name: 'Apply' }).click()
     await expect(card).toBeHidden()
     await expect.poll(async () => (await textEntities(page))[0].text).toBe('3DX')
-    await page.evaluate(() => window.__3dshaper!.store.getState().undo())
+    await page.evaluate(() => window.__3dparter!.store.getState().undo())
     await expect.poll(async () => (await textEntities(page))[0].text).toBe('3D')
 
     const names = await extrudeTextRegions(page)
@@ -249,7 +249,7 @@ test.describe('sketch text', () => {
     expect(ref[0].name).toMatch(/~\*$/)
     // Change the wording upstream: the solid follows.
     await page.evaluate(() => {
-      const s = window.__3dshaper!.store.getState()
+      const s = window.__3dparter!.store.getState()
       s.apply('Edit text', (d) => {
         const f = d.features.find((x) => x.type === 'sketch')
         if (f?.type !== 'sketch') return
@@ -283,7 +283,7 @@ test.describe('sketch text', () => {
     const refused = await variableCommand(page, 'setVariableExpression', id, '0')
     expect(refused.ok).toBe(false)
     expect((await textEntities(page))[0].size).toBeCloseTo(30, 5)
-    await page.evaluate(() => window.__3dshaper!.store.getState().undo())
+    await page.evaluate(() => window.__3dparter!.store.getState().undo())
     await expect.poll(async () => (await textEntities(page))[0].size).toBeCloseTo(20, 5)
   })
 

@@ -187,3 +187,47 @@ test.describe('F11 manage projects', () => {
     expect(blocking.map((v) => `${v.id} (${v.impact}): ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)).toEqual([])
   })
 })
+
+test.describe('rename migration', () => {
+  test('X-6 projects saved under the old 3dshaper database show up after the rename', async ({ page }) => {
+    // Seed the old database from a blank page on the app's origin, so the app has not touched IndexedDB yet.
+    await page.route('**/__blank', (r) => r.fulfill({ contentType: 'text/html', body: '<!doctype html><title>blank</title>' }))
+    await page.goto('/__blank')
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve, reject) => {
+          const req = indexedDB.open('3dshaper', 10)
+          req.onerror = () => reject(req.error)
+          req.onupgradeneeded = () => {
+            const d = req.result
+            d.createObjectStore('settings', { keyPath: 'id' })
+            d.createObjectStore('folders', { keyPath: 'id' })
+            const p = d.createObjectStore('projects', { keyPath: 'id' })
+            p.createIndex('name', 'name')
+            d.createObjectStore('projectVersions', { keyPath: 'id' })
+            d.createObjectStore('assets', { keyPath: 'id' })
+          }
+          req.onsuccess = () => {
+            const d = req.result
+            const tx = d.transaction(['settings', 'projects'], 'readwrite')
+            tx.objectStore('settings').put({ id: 'app', theme: 'system', units: 'mm', precision: 2, gridSnap: true, seeded: true })
+            for (const [id, name] of [['legacy-1', 'Legacy bracket'], ['legacy-2', 'Legacy gear']]) {
+              tx.objectStore('projects').put({
+                id, name, folderId: null, units: 'mm', revision: 1, thumbnail: null, createdAt: 1, updatedAt: 2, deletedAt: null,
+                document: { schemaVersion: 1, units: 'mm', variables: [], features: [], rollbackIndex: null, bodies: {}, itemFolders: [] },
+              })
+            }
+            tx.oncomplete = () => {
+              d.close()
+              resolve()
+            }
+            tx.onerror = () => reject(tx.error)
+          }
+        }),
+    )
+    await page.goto('/')
+    await expect(cards(page)).toHaveCount(2)
+    await expect(page.getByRole('main').getByText('Legacy bracket', { exact: true })).toBeVisible()
+    await expect(page.getByRole('main').getByText('Legacy gear', { exact: true })).toBeVisible()
+  })
+})

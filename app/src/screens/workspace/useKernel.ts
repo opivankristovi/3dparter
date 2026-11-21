@@ -5,6 +5,7 @@ import type { Feature, OriginPlaneName, PlaneFrame, ProjectDocument } from '../.
 import type { MeshData, SketchRegionData } from '../../kernel/api'
 import { getKernel, restartKernel } from '../../kernel/client'
 import { isPreviewable } from '../../modeling/logic'
+import { recordError } from '../../support/errorLog'
 import { useToolStore } from './toolStore'
 import type { FeatureStatuses } from './SidebarTabs'
 
@@ -86,6 +87,7 @@ export function useKernel(doc: ProjectDocument, draft: Feature | null, draftRepl
       .then(() => live && setEngine('ready'))
       .catch((e: unknown) => {
         if (!live) return
+        recordError('kernel', e)
         setError(e instanceof Error ? e.message : 'Unknown error')
         setEngine('error')
       })
@@ -190,6 +192,7 @@ export function useKernel(doc: ProjectDocument, draft: Feature | null, draftRepl
         setSettled((n) => n + 1)
       } catch (e) {
         if (cancelled || mine !== generation.current) return
+        recordError('kernel', e)
         setBusy(false)
         setError(e instanceof Error ? e.message : 'Unknown error')
         setEngine('error')

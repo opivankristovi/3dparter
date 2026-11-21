@@ -6,7 +6,7 @@ import type { Page } from '@playwright/test'
 
 const cameraDir = (page: Page) =>
   page.evaluate(() => {
-    const e = window.__3dshaper!.engine
+    const e = window.__3dparter!.engine
     const d = e.camera.position.clone().sub(e.controls.target).normalize()
     return [d.x, d.y, d.z] as [number, number, number]
   })

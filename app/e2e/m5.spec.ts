@@ -1,7 +1,7 @@
 // M5 features: STEP import (S10 / F08), Extrude offset & through-all, Loft, Split, Mirror, Pattern,
 // sketcher Polygon/Slot/Trim/Fillet corner/Mirror/Pattern, adaptive Suggested tools, body colour & opacity,
 // Section view, Wireframe display mode, Space/Ctrl+1 camera shortcuts, '?' shortcut sheet (S13),
-// viewport context menu, and native .3dshaper.json project export/import.
+// viewport context menu, and native .3dparter.json project export/import.
 import { readFileSync } from 'node:fs'
 import AxeBuilder from '@axe-core/playwright'
 import type { Page } from '@playwright/test'
@@ -158,7 +158,7 @@ test.describe('M5 features', () => {
     await expect(planeCard).toBeHidden()
     const planeId = (await doc(page)).features.find((f) => f.type === 'plane')!.id
 
-    await page.evaluate((id) => window.__3dshaper!.store.getState().setSelection([{ kind: 'constructionPlane', name: id }]), planeId)
+    await page.evaluate((id) => window.__3dparter!.store.getState().setSelection([{ kind: 'constructionPlane', name: id }]), planeId)
     await toolButton(page, 'Rectangle').click()
     await expect.poll(async () => sketches(await doc(page)).length).toBe(2)
     await waitCameraStable(page)
@@ -196,7 +196,7 @@ test.describe('M5 features', () => {
     const midPlaneId = (await doc(page)).features.filter((f) => f.type === 'plane')[1].id
 
     const loftBodyId = (await doc(page)).features.find((f) => f.type === 'loft')!.id
-    await page.evaluate((id) => window.__3dshaper!.store.getState().setSelection([{ kind: 'body', name: id }]), loftBodyId)
+    await page.evaluate((id) => window.__3dparter!.store.getState().setSelection([{ kind: 'body', name: id }]), loftBodyId)
     await toolButton(page, 'Split').click()
     const splitCard = page.getByRole('dialog', { name: 'Split', exact: true })
     await expect(splitCard).toBeVisible()
@@ -209,7 +209,7 @@ test.describe('M5 features', () => {
     await expect.poll(() => bodyMeshes(page)).toBe(2)
 
     // Mirror one half across XZ plane -> 3 solids.
-    await page.evaluate((id) => window.__3dshaper!.store.getState().setSelection([{ kind: 'body', name: id }]), loftBodyId)
+    await page.evaluate((id) => window.__3dparter!.store.getState().setSelection([{ kind: 'body', name: id }]), loftBodyId)
     await toolButton(page, 'Mirror').click()
     const mirrorCard = page.getByRole('dialog', { name: 'Mirror', exact: true })
     await expect(mirrorCard).toBeVisible()
@@ -221,7 +221,7 @@ test.describe('M5 features', () => {
     await expect.poll(() => bodyMeshes(page)).toBe(3)
 
     // Linear Pattern -> 5 solids total (adds 2 copies of the mirrored solid).
-    await page.evaluate((id) => window.__3dshaper!.store.getState().setSelection([{ kind: 'body', name: id }]), loftBodyId)
+    await page.evaluate((id) => window.__3dparter!.store.getState().setSelection([{ kind: 'body', name: id }]), loftBodyId)
     await toolButton(page, 'Pattern').click()
     const patCard = page.getByRole('dialog', { name: 'Pattern', exact: true })
     await expect(patCard).toBeVisible()
@@ -261,7 +261,7 @@ test.describe('M5 features', () => {
     // Pick two adjacent hexagon lines and apply Fillet corner.
     const firstTwo = sketches(await doc(page))[0].sketch.entities.slice(0, 2).map((e) => `${skId}/${e.id}`)
     await page.evaluate(
-      (refs) => window.__3dshaper!.store.getState().setSelection(refs.map((name) => ({ kind: 'sketchEdge' as const, name }))),
+      (refs) => window.__3dparter!.store.getState().setSelection(refs.map((name) => ({ kind: 'sketchEdge' as const, name }))),
       firstTwo,
     )
     await page.getByRole('button', { name: 'Fillet corner' }).click()
@@ -270,7 +270,7 @@ test.describe('M5 features', () => {
     // Pattern sketch: select 1 entity and click Pattern sketch -> +2 copies.
     const one = sketches(await doc(page))[0].sketch.entities[0]
     const beforePattern = sketches(await doc(page))[0].sketch.entities.length
-    await page.evaluate((ref) => window.__3dshaper!.store.getState().setSelection([{ kind: 'sketchEdge', name: ref }]), `${skId}/${one.id}`)
+    await page.evaluate((ref) => window.__3dparter!.store.getState().setSelection([{ kind: 'sketchEdge', name: ref }]), `${skId}/${one.id}`)
     await page.getByRole('button', { name: 'Pattern sketch' }).click()
     await expect.poll(async () => sketches(await doc(page))[0].sketch.entities.length).toBe(beforePattern + 2)
 
@@ -285,14 +285,14 @@ test.describe('M5 features', () => {
     const axisEnt = ents[ents.length - 1]
     const beforeMirror = ents.length
     await page.evaluate(
-      (refs) => window.__3dshaper!.store.getState().setSelection(refs.map((name) => ({ kind: 'sketchEdge' as const, name }))),
+      (refs) => window.__3dparter!.store.getState().setSelection(refs.map((name) => ({ kind: 'sketchEdge' as const, name }))),
       [`${skId}/${one.id}`, `${skId}/${axisEnt.id}`],
     )
     await page.getByRole('button', { name: 'Mirror sketch' }).click()
     await expect.poll(async () => sketches(await doc(page))[0].sketch.entities.length).toBe(beforeMirror + 1)
 
     // Trim via T key trims or removes the selected entity.
-    await page.evaluate((ref) => window.__3dshaper!.store.getState().setSelection([{ kind: 'sketchEdge', name: ref }]), `${skId}/${axisEnt.id}`)
+    await page.evaluate((ref) => window.__3dparter!.store.getState().setSelection([{ kind: 'sketchEdge', name: ref }]), `${skId}/${axisEnt.id}`)
     await page.keyboard.press('t')
     await expect.poll(async () => sketches(await doc(page))[0].sketch.entities.some((e) => e.id === axisEnt.id)).toBe(false)
   })
@@ -316,7 +316,7 @@ test.describe('M5 features', () => {
     await page.getByRole('button', { name: /Appearance for/ }).first().click()
     await page.getByRole('menuitemcheckbox', { name: '50%' }).click()
 
-    const app = await page.evaluate(() => Object.values(window.__3dshaper!.store.getState().doc.bodies)[0])
+    const app = await page.evaluate(() => Object.values(window.__3dparter!.store.getState().doc.bodies)[0])
     expect(app.color).toBe('token:accent')
     expect(app.opacity).toBeCloseTo(0.5, 2)
 
@@ -324,12 +324,12 @@ test.describe('M5 features', () => {
     const sectionBtn = page.getByRole('button', { name: 'Section view' })
     await sectionBtn.click()
     await expect(sectionBtn).toHaveAttribute('aria-pressed', 'true')
-    expect(await page.evaluate(() => window.__3dshaper!.engine.getSectionView())).toBe(true)
+    expect(await page.evaluate(() => window.__3dparter!.engine.getSectionView())).toBe(true)
 
     const wireBtn = page.getByRole('button', { name: 'Wireframe' })
     await wireBtn.click()
     await expect(wireBtn).toHaveAttribute('aria-pressed', 'true')
-    expect(await page.evaluate(() => window.__3dshaper!.engine.getDisplayMode())).toBe('wireframe')
+    expect(await page.evaluate(() => window.__3dparter!.engine.getDisplayMode())).toBe('wireframe')
 
     // Turn both back off via Viewport right-click context menu.
     const box = (await page.locator('canvas').boundingBox())!
@@ -340,23 +340,23 @@ test.describe('M5 features', () => {
     await expect(vpMenu).toBeVisible()
     await vpMenu.getByRole('menuitemcheckbox', { name: 'Wireframe' }).click()
     await expect(vpMenu).toBeHidden()
-    expect(await page.evaluate(() => window.__3dshaper!.engine.getDisplayMode())).toBe('shaded')
+    expect(await page.evaluate(() => window.__3dparter!.engine.getDisplayMode())).toBe('shaded')
 
     await page.keyboard.press('Escape') // clear selection
     await expect(suggested).toBeHidden()
 
     // Select Top face / plane, press Space to zoom-to-face, then Ctrl+1 to reset Home view.
-    await page.evaluate(() => window.__3dshaper!.store.getState().setSelection([{ kind: 'originPlane', name: 'XY' }]))
+    await page.evaluate(() => window.__3dparter!.store.getState().setSelection([{ kind: 'originPlane', name: 'XY' }]))
     await page.locator('canvas').focus()
-    const keyBefore = await page.evaluate(() => window.__3dshaper!.engine.viewKey())
+    const keyBefore = await page.evaluate(() => window.__3dparter!.engine.viewKey())
     await page.keyboard.press('Space')
     await waitCameraStable(page)
-    const keyAfterSpace = await page.evaluate(() => window.__3dshaper!.engine.viewKey())
+    const keyAfterSpace = await page.evaluate(() => window.__3dparter!.engine.viewKey())
     expect(keyAfterSpace).not.toBe(keyBefore)
 
     await page.keyboard.press('Control+1')
     await waitCameraStable(page)
-    const camPos = await page.evaluate(() => window.__3dshaper!.engine.camera.position.toArray())
+    const camPos = await page.evaluate(() => window.__3dparter!.engine.camera.position.toArray())
     expect(camPos[2]).toBeGreaterThan(80)
 
     // '?' opens Keyboard shortcuts dialog (S13) with clean axe check.
@@ -394,13 +394,13 @@ test.describe('@mobile M5 touch navigation', () => {
 
   test('@mobile touch swipe orbits camera on phone viewport', async ({ page }) => {
     await newProject(page)
-    const before = await page.evaluate(() => window.__3dshaper!.engine.camera.position.toArray())
+    const before = await page.evaluate(() => window.__3dparter!.engine.camera.position.toArray())
     const box = (await page.locator('canvas').boundingBox())!
     const sx = Math.round(box.x + box.width * 0.5)
     const sy = Math.round(box.y + box.height * 0.5)
     await page.evaluate(
       ({ x, y }) => {
-        const canvas = window.__3dshaper!.engine.canvas
+        const canvas = window.__3dparter!.engine.canvas
         canvas.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, pointerType: 'touch', isPrimary: true, clientX: x, clientY: y, bubbles: true }))
         canvas.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, pointerType: 'touch', isPrimary: true, clientX: x + 90, clientY: y - 40, bubbles: true }))
         canvas.dispatchEvent(new PointerEvent('pointermove', { pointerId: 1, pointerType: 'touch', isPrimary: true, clientX: x + 140, clientY: y - 60, bubbles: true }))
@@ -408,7 +408,7 @@ test.describe('@mobile M5 touch navigation', () => {
       },
       { x: sx, y: sy },
     )
-    const after = await page.evaluate(() => window.__3dshaper!.engine.camera.position.toArray())
+    const after = await page.evaluate(() => window.__3dparter!.engine.camera.position.toArray())
     expect(Math.hypot(after[0] - before[0], after[1] - before[1], after[2] - before[2])).toBeGreaterThan(5)
   })
 })

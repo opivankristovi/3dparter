@@ -126,7 +126,7 @@ test.describe('History: reordering', () => {
     await twoBlends(page)
     // A fillet that finds its edge by position only: its name mentions no step, so the name check lets it go anywhere.
     await page.evaluate(() => {
-      const s = window.__3dshaper!.store.getState()
+      const s = window.__3dparter!.store.getState()
       s.apply('Add Fillet 2', (d) => {
         d.features.push({
           id: 'ghost-fillet',
@@ -270,7 +270,7 @@ test.describe('History: a long list and a phone', () => {
   async function manySketches(page: Page, n: number) {
     await newProject(page)
     await page.evaluate((count) => {
-      const s = window.__3dshaper!.store.getState()
+      const s = window.__3dparter!.store.getState()
       s.apply('Add steps', (d) => {
         for (let i = 1; i <= count; i++) {
           d.features.push({
