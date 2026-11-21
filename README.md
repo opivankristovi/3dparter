@@ -101,4 +101,10 @@ npm run dev          # http://localhost:5173
 
 [Terms](https://opivankristovi.github.io/3dparter/#/terms) · [Privacy](https://opivankristovi.github.io/3dparter/#/privacy)
 
-3DParter™ is a trademark claim of its author. No license has been chosen yet, so all rights are reserved for now.
+## License
+
+3DParter is free software: you can redistribute it and/or modify it under the terms of the **GNU General Public License** as published by the Free Software Foundation, either **version 3** of the License, or (at your option) any later version. It is distributed in the hope that it will be useful, but **without any warranty**; without even the implied warranty of merchantability or fitness for a particular purpose. See [LICENSE](LICENSE) for the full text.
+
+Third-party libraries keep their own licenses: OpenCascade via replicad-opencascadejs (LGPL-2.1), PlaneGCS (LGPL-2.0 or later), the Inter font (SIL Open Font License 1.1), and MIT, ISC, Apache-2.0 or Unlicense for the rest.
+
+The GPL covers the code, not the name: "3DParter" and the 3DParter logo are trademarks of the author and are not licensed under the GPL. If you ship a modified version, please give it a different name.
