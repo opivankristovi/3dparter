@@ -2,26 +2,43 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
+// The build's base path (BASE_PATH, same variable as the build and playwright.preview.config.ts). Paths below are relative to it.
+const BASE = (() => {
+  const v = (process.env.BASE_PATH ?? '').trim().replace(/^\/+|\/+$/g, '')
+  return v ? `/${v}/` : '/'
+})()
+
 test('manifest is valid JSON and every icon loads', async ({ page, request }) => {
-  await page.goto('/')
+  await page.goto('./')
   const href = await page.locator('link[rel="manifest"]').getAttribute('href')
-  expect(href).toBe('/manifest.webmanifest')
+  expect(href).toBe(`${BASE}manifest.webmanifest`)
+  for (const sel of ['link[rel="icon"]', 'link[rel="apple-touch-icon"]']) {
+    for (const h of await page.locator(sel).evaluateAll((els) => els.map((e) => e.getAttribute('href')))) {
+      expect(h, sel).toMatch(new RegExp(`^${BASE}`))
+    }
+  }
+  const og = await page.locator('meta[property="og:image"]').getAttribute('content')
+  expect(og).toMatch(/social-card\.png$/)
+  if (process.env.SITE_URL) {
+    expect(og).toBe(`${process.env.SITE_URL.replace(/\/*$/, '/')}social-card.png`)
+    expect(await page.locator('meta[property="og:url"]').getAttribute('content')).toBe(process.env.SITE_URL.replace(/\/*$/, '/'))
+  }
   const res = await request.get(href!)
   expect(res.ok()).toBe(true)
   const m = await res.json()
   expect(m.name).toBe('3DParter')
   expect(m.short_name).toBeTruthy()
-  expect(m.start_url).toBe('/')
-  expect(m.scope).toBe('/')
+  expect(new URL(m.start_url, res.url()).pathname).toBe(BASE)
+  expect(new URL(m.scope, res.url()).pathname).toBe(BASE)
   expect(m.display).toBe('standalone')
   expect(m.icons.some((i: { purpose: string }) => i.purpose === 'maskable')).toBe(true)
   for (const icon of m.icons) {
-    const r = await request.get(icon.src)
+    const r = await request.get(new URL(icon.src, res.url()).href)
     expect(r.ok(), icon.src).toBe(true)
     expect(r.headers()['content-type']).toContain(icon.type.split('/')[0])
   }
-  for (const link of ['/favicon-16.png', '/favicon-32.png', '/apple-touch-icon.png', '/social-card.png']) {
-    expect((await request.get(link)).ok(), link).toBe(true)
+  for (const link of ['favicon-16.png', 'favicon-32.png', 'apple-touch-icon.png', 'social-card.png', 'launch/workspace.png']) {
+    expect((await request.get(new URL(link, res.url()).href)).ok(), link).toBe(true)
   }
 })
 
@@ -42,7 +59,7 @@ async function openTopSketch(page: Page) {
 }
 
 test('service worker takes control, then the app opens and models offline', async ({ page, context }) => {
-  await page.goto('/')
+  await page.goto('./')
   await expect(page.getByRole('button', { name: 'New project' }).first()).toBeVisible()
   // Registered and active after the first visit...
   await page.evaluate(async () => {
@@ -60,9 +77,20 @@ test('service worker takes control, then the app opens and models offline', asyn
   expect(cached.names).toHaveLength(1)
   expect(cached.keys.some((k) => k.endsWith('.wasm') && k.includes('replicad'))).toBe(true)
   expect(cached.keys.some((k) => k.endsWith('.woff2'))).toBe(true)
-  expect(cached.keys).toContain('/index.html')
+  expect(cached.keys).toContain(`${BASE}index.html`)
+  expect(cached.keys).toContain(BASE)
+  expect(cached.keys.every((k) => k.startsWith(BASE))).toBe(true)
+  const scope = await page.evaluate(async () => new URL((await navigator.serviceWorker.ready).scope).pathname)
+  expect(scope).toBe(BASE)
 
   await context.setOffline(true)
+  // The info pages are part of the offline shell too.
+  for (const [hash, heading] of [['#/terms', 'Terms of use'], ['#/privacy', 'Privacy policy']]) {
+    await page.goto(`./${hash}`)
+    await page.reload()
+    await expect(page.getByRole('heading', { level: 1, name: heading })).toBeVisible()
+  }
+  await page.goto('./')
   await page.reload()
   await expect(page.getByRole('button', { name: 'New project' }).first()).toBeVisible()
   await expect(page.getByText('Sample').first()).toBeVisible()
@@ -89,4 +117,15 @@ test('service worker takes control, then the app opens and models offline', asyn
   await card.getByRole('button', { name: 'Apply' }).click()
   await expect(card).toBeHidden()
   await expect(page.getByRole('tree', { name: 'History' }).getByRole('treeitem', { name: /Extrude 1/ })).toBeVisible()
+})
+
+test('terms and privacy pages render (online)', async ({ page }) => {
+  await page.goto('./#/terms')
+  await expect(page.getByRole('heading', { level: 1, name: 'Terms of use' })).toBeVisible()
+  await page.goto('./#/privacy')
+  await expect(page.getByRole('heading', { level: 1, name: 'Privacy policy' })).toBeVisible()
+  await expect(page.getByRole('heading', { level: 2, name: 'Hosting' })).toBeVisible()
+  await page.goto('./#/welcome')
+  await expect(page.getByRole('img', { name: /The 3DParter workspace/ })).toBeVisible()
+  expect(await page.getByRole('img', { name: /The 3DParter workspace/ }).evaluate((i: HTMLImageElement) => i.naturalWidth)).toBeGreaterThan(0)
 })

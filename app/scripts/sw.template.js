@@ -6,11 +6,13 @@
 const VERSION = '__VERSION__'
 const PRECACHE = __PRECACHE__
 const CACHE = `3dparter-${VERSION}`
-const SHELL = '/index.html'
+// The app can live under a sub-path (GitHub Pages): sw.js sits at the base, so the base is this file's own directory.
+const BASE = new URL('./', self.location.href)
+const SHELL = BASE.pathname + 'index.html'
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE).then((cache) => cache.addAll(PRECACHE.map((u) => new Request(u, { cache: 'reload' })))),
+    caches.open(CACHE).then((cache) => cache.addAll(PRECACHE.map((u) => new Request(new URL(u, BASE).href, { cache: 'reload' })))),
   )
 })
 
@@ -47,7 +49,7 @@ async function cacheFirst(request) {
   const hit = await caches.match(request, { ignoreSearch: true, ignoreVary: true })
   if (hit) return hit
   const res = await fetch(request)
-  if (res.ok && new URL(request.url).pathname.startsWith('/assets/')) {
+  if (res.ok && new URL(request.url).pathname.startsWith(BASE.pathname + 'assets/')) {
     const cache = await caches.open(CACHE)
     cache.put(request, res.clone())
   }
@@ -61,7 +63,7 @@ self.addEventListener('fetch', (event) => {
   if (url.origin !== self.location.origin) return
   if (request.mode === 'navigate') {
     event.respondWith(networkFirstShell(request))
-  } else if (url.pathname !== '/sw.js') {
+  } else if (url.pathname !== BASE.pathname + 'sw.js') {
     event.respondWith(cacheFirst(request))
   }
 })

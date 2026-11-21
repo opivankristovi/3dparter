@@ -100,7 +100,7 @@ export function Landing() {
       </a>
       <header className="border-b border-border">
         <div className="mx-auto flex h-(--layout-topbar-h) w-full max-w-(--layout-dashboard-max) items-center justify-between px-4">
-          <span className="text-lg font-semibold">3DParter</span>
+          <span className="text-lg font-semibold">3DParter<sup className="ml-0.5 align-super text-xs font-normal">™</sup></span>
           <LinkButton href="/">Open projects</LinkButton>
         </div>
       </header>
@@ -121,7 +121,7 @@ export function Landing() {
             </div>
           </div>
           <img
-            src="/launch/workspace.png"
+            src={`${import.meta.env.BASE_URL}launch/workspace.png`}
             width={1440}
             height={900}
             alt="The 3DParter workspace: a tool rail on the left, a rectangular solid in the 3D view, and a history panel on the right listing Sketch 1 and Extrude 1."
@@ -213,10 +213,13 @@ export function Landing() {
 
       <footer className="border-t border-border">
         <div className="mx-auto flex w-full max-w-(--layout-dashboard-max) flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-4 text-sm text-text-muted">
-          <p>3DParter is in beta. Projects are stored in your browser.</p>
+          <p>3DParter™ is in beta. Projects are stored in your browser.</p>
           <nav aria-label="Footer" className="flex gap-4">
             <Link href="/privacy" className="underline">
               Privacy
+            </Link>
+            <Link href="/terms" className="underline">
+              Terms
             </Link>
             <Link href="/support" className="underline">
               Support

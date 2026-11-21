@@ -127,6 +127,9 @@ export function SettingsDialog({ open, onOpenChange }: { open: boolean; onOpenCh
             <LinkChip href="/privacy" onNavigate={() => onOpenChange(false)}>
               Privacy
             </LinkChip>
+            <LinkChip href="/terms" onNavigate={() => onOpenChange(false)}>
+              Terms
+            </LinkChip>
           </div>
         </Row>
         <Row title="Delete all local data" hint="Removes your projects, settings, error log and offline copy from this browser.">

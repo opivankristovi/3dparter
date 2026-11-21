@@ -39,6 +39,9 @@ export function InfoPage({ title, intro, children }: { title: string; intro?: Re
           <Link href="/privacy" className="underline">
             Privacy
           </Link>
+          <Link href="/terms" className="underline">
+            Terms
+          </Link>
           <Link href="/support" className="underline">
             Support
           </Link>

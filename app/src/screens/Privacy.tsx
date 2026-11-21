@@ -46,6 +46,16 @@ export default function Privacy() {
         </p>
       </Section>
 
+      <Section id="hosting" title="Hosting">
+        <p>
+          This site is served by GitHub Pages. Like any web host, GitHub receives your IP address and browser details when you load the site, and may keep them in its logs under{' '}
+          <a href="https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement" target="_blank" rel="noopener noreferrer" className="underline">
+            GitHub's privacy statement
+          </a>
+          . 3DParter itself does not receive or store them.
+        </p>
+      </Section>
+
       <Section id="delete" title="How to delete everything">
         <p>
           Open Settings and press Delete all local data. After you confirm, it removes your projects, settings, error log and the offline copy from this browser, then reloads.
@@ -61,7 +71,11 @@ export default function Privacy() {
           <Link href="/support" className="underline">
             support page
           </Link>
-          .
+          . The{' '}
+          <Link href="/terms" className="underline">
+            terms of use
+          </Link>{' '}
+          are on their own page.
         </p>
       </Section>
     </InfoPage>

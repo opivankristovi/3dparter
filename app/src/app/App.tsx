@@ -14,6 +14,7 @@ import { TooltipProvider } from '../ui/Tooltip'
 import { useSettings, useThemeSync } from './useSettings'
 
 const Privacy = lazy(() => import('../screens/Privacy'))
+const Terms = lazy(() => import('../screens/Terms'))
 const Support = lazy(() => import('../screens/Support'))
 
 export function App() {
@@ -39,6 +40,7 @@ export function App() {
               <Route path="/login" component={Login} />
               <Route path="/welcome" component={Landing} />
               <Route path="/privacy" component={Privacy} />
+              <Route path="/terms" component={Terms} />
               <Route path="/support" component={Support} />
               <Route>
                 <NotFound />
