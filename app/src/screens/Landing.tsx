@@ -16,7 +16,7 @@ const PROBLEMS = [
 const STEPS = [
   { title: 'Sketch', body: 'Draw on a plane or a flat face. Type sizes as you go, add constraints, and see in words how much can still move.' },
   { title: 'Build', body: 'Extrude, revolve, sweep or loft into a solid. Fillet, shell and combine. Every step lands in the history.' },
-  { title: 'Export', body: 'Pick STL, 3MF or STEP, choose high or low detail, and download. Nothing is held back.' },
+  { title: 'Export', body: 'Pick STL, 3MF, STEP, OBJ or GLB, choose high or low detail, and download. Nothing is held back.' },
 ]
 
 const FEATURES = [
@@ -41,6 +41,14 @@ const FEATURES = [
     body: 'One finger orbits, two fingers pan and zoom, and the phone layout keeps the modelling tools in reach. Tested in emulated touch so far, not yet across real devices.',
   },
   {
+    title: 'Text that follows a curve',
+    body: 'Type text in a sketch, straight or around a circle or arc, then raise it or cut it in. Letters keep their smooth curves, so a coin or a dial label prints clean.',
+  },
+  {
+    title: 'Edit the STL you already have',
+    body: 'Import an STL or 3MF and it becomes a solid: cut holes in it, round its edges, sketch on its faces. Works for closed meshes up to 20,000 triangles.',
+  },
+  {
     title: 'Change a number, the part follows',
     body: 'Edit an early step and later steps rebuild. Use variables and expressions such as width / 2 + 3 in any number field. A step that breaks says why.',
   },
@@ -56,12 +64,12 @@ const FAQ = [
     a: 'Your projects go with it, because they are stored locally. Use Export project in the workspace to save a .3dparter.json file as a backup, and import it from the project list.',
   },
   {
-    q: 'Can I bring in files from other CAD tools?',
-    a: 'You can import STEP files (.step and .stp) as an editable solid. Other formats, such as IGES, DXF, SVG, STL and 3MF, cannot be imported yet.',
+    q: 'Can I bring in files from other CAD or mesh tools?',
+    a: 'Yes: STEP (.step, .stp), STL and 3MF. STEP comes in as an editable solid. Closed STL and 3MF meshes up to 20,000 triangles become solids you can cut, round and sketch on; curved surfaces stay faceted, the way the mesh was made. IGES, DXF and SVG cannot be imported yet.',
   },
   {
     q: 'What is not here yet?',
-    a: 'Technical drawings, assemblies, rendering, and text in sketches. We would rather say so than have you find out halfway through a design.',
+    a: 'Technical drawings, assemblies, rendering, and IGES, DXF or SVG import. We would rather say so than have you find out halfway through a design.',
   },
   {
     q: 'Does it work on a phone or tablet?',
