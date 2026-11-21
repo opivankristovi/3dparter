@@ -4,6 +4,15 @@ name: Firefox tests
 # Manual trigger only: Actions > Firefox tests > Run workflow, or `gh workflow run firefox.yml`.
 on:
   workflow_dispatch:
+    inputs:
+      grep:
+        description: Only run tests whose title matches this (empty = all)
+        required: false
+        default: ''
+      workers:
+        description: Parallel browsers
+        required: false
+        default: '1'
 
 jobs:
   firefox:
@@ -25,7 +34,7 @@ jobs:
       # (Xvfb) where Mesa's software renderer gives it WebGL.
       - run: sudo apt-get update && sudo apt-get install -y xvfb libgl1-mesa-dri libglx-mesa0
       - name: Firefox end-to-end
-        run: xvfb-run -a --server-args="-screen 0 1920x1080x24" npx playwright test --project=firefox-desktop --headed --reporter=line --max-failures=15
+        run: xvfb-run -a --server-args="-screen 0 1920x1080x24" npx playwright test --project=firefox-desktop --headed --reporter=line --max-failures=15 --workers=${{ inputs.workers }} ${{ inputs.grep != '' && format('-g "{0}"', inputs.grep) || '' }}
         env:
           CROSS_BROWSER: '1'
       - uses: actions/upload-artifact@v4
